@@ -6,7 +6,7 @@
 > **Package**: `com.dentapinos.dataguard`  
 > **Version**: 0.0.1-SNAPSHOT  
 > **Author**: Dentapinos  
-> **Last Updated**: 2026-06-22
+> **Last Updated**: 2026-06-23
 
 ---
 
@@ -781,6 +781,213 @@ class StrictRestoreStrategyTest {
         assertEquals(0, stats.getTablesFailed());
     }
 }
+```
+
+### 4. Запуск тестов через Maven
+
+Для единообразного запуска тестов (локально и в CI/CD) используется скрипт `run-tests.sh`.  
+Он поддерживает три режима:
+
+- `unit` — только юнит‑тесты (`*Test.java`);
+- `it` — только интеграционные тесты (`*IT.java`);
+- `all` — юнит + интеграционные (по умолчанию).
+
+#### 4.1. Подготовка скрипта
+
+Сделайте скрипт исполняемым (обычно выполняется один раз и/или на шаге CI):
+
+```bash
+chmod +x run-tests.sh
+```
+
+#### 4.2. Локальный запуск
+
+```bash
+# Только юнит-тесты
+./run-tests.sh unit
+
+# Только интеграционные тесты
+./run-tests.sh it
+
+# Все тесты (юнит + интеграционные)
+./run-tests.sh all
+```
+
+#### 4.3. Пример интеграции с CI
+
+**GitHub Actions**
+
+```yaml
+- name: Make test runner executable
+  run: chmod +x run-tests.sh
+
+- name: Run unit tests
+  run: ./run-tests.sh unit
+
+- name: Run integration tests
+  run: ./run-tests.sh it
+```
+
+**GitLab CI**
+
+```yaml
+unit_tests:
+  stage: test
+  script:
+    - chmod +x run-tests.sh
+    - ./run-tests.sh unit
+
+integration_tests:
+  stage: test
+  script:
+    - chmod +x run-tests.sh
+    - ./run-tests.sh it
+```
+
+В других CI‑системах достаточно выполнить те же команды: сначала `chmod +x run-tests.sh`, затем `./run-tests.sh <unit|it|all>`.
+
+#### 4.3.1. Запуск тестов в Windows
+
+В Windows (PowerShell) скрипт запускается через bash (WSL или Git Bash):
+
+```powershell
+# Для запуска на Linux/WSL
+bash run-tests.sh unit
+bash run-tests.sh it
+bash run-tests.sh all
+
+# Или напрямую через Maven (аналогично)
+mvn test                                       # только юнит-тесты
+mvn failsafe:integration-test failsafe:verify  # только интеграционные тесты
+mvn verify                                     # все тесты (юнит + интеграционные)
+# Для некоторых систем 
+./mvnw test                                       # только юнит-тесты
+./mvnw failsafe:integration-test failsafe:verify  # только интеграционные тесты
+./mvnw verify                                     # все тесты (юнит + интеграционные)
+```
+
+#### 4.4. Запуск тестов через кастомный запускатор (для кастомных отчетов)
+
+В проекте также есть кастомный запускатор тестов в классе `TestRunner.java` (`src/main/java/com/dentapinos.dataguard/TestRunner.java`).
+Он позволяет:
+
+- Запускать тесты программно через JUnit Platform Launcher API
+- Использовать кастомный слушатель событий `MyCustomListener.java` для форматированного вывода результатов
+- Запускать тесты в средах, где стандартный Maven запуск не подходит
+
+**Простой способ запуска (рекомендуется для Windows):**
+
+```powershell
+# Сначала скомпилируйте тесты
+./mvnw test-compile
+
+# Получите classpath для зависимостей и сохраните в файл (обратите внимание на кавычки вокруг параметров)
+./mvnw dependency:build-classpath -D"mdep.outputFile=classpath.txt" -D"includeScope=test" -q
+
+# Прочитайте classpath из файла
+$CLASSPATH = Get-Content classpath.txt
+
+# Запустите через Java (важно: include target/classes, target/test-classes и classpath)
+java -cp "target/classes;target/test-classes;$CLASSPATH" com.dentapinos.dataguard.TestRunner all
+```
+
+**Ручной способ запуска (для отладки):**
+
+```bash
+# Скомпилируйте тесты
+./mvnw test-compile
+
+# Получите classpath для зависимостей
+CLASSPATH=$(./mvnw dependency:build-classpath -q -DincludeScope=test -Dmdep.outputFile=/dev/stdout)
+
+# Запустите через Java
+java -cp "target/classes:target/test-classes:$CLASSPATH" com.dentapinos.dataguard.TestRunner all
+
+# Только юнит-тесты
+java -cp "target/classes:target/test-classes:$CLASSPATH" com.dentapinos.dataguard.TestRunner unit
+
+# Только интеграционные тесты
+java -cp "target/classes:target/test-classes:$CLASSPATH" com.dentapinos.dataguard.TestRunner it
+```
+
+**Для Windows (PowerShell):** Сохраните classpath в файл, так как передача через stdout может работать некорректно:
+
+```powershell
+# Скомпилируйте тесты
+./mvnw test-compile
+
+# Получите classpath для зависимостей и сохраните в файл (обратите внимание на кавычки вокруг параметров)
+./mvnw dependency:build-classpath -D"mdep.outputFile=classpath.txt" -D"includeScope=test" -q
+
+# Прочитайте classpath из файла
+$CLASSPATH = Get-Content classpath.txt
+
+# Запустите через Java (важно: include target/classes, target/test-classes и classpath)
+java -cp "target/classes;target/test-classes;$CLASSPATH" com.dentapinos.dataguard.TestRunner all
+
+# Только юнит-тесты
+java -cp "target/classes;target/test-classes;$CLASSPATH" com.dentapinos.dataguard.TestRunner unit
+
+# Только интеграционные тесты
+java -cp "target/classes;target/test-classes;$CLASSPATH" com.dentapinos.dataguard.TestRunner it
+```
+# Скомпилируйте тесты
+./mvnw test-compile
+
+# Получите classpath для зависимостей и сохраните в файл
+./mvnw dependency:build-classpath -q -DincludeScope=test -Dmdep.outputFile=classpath.txt
+
+# Прочитайте classpath из файла
+$CLASSPATH = Get-Content classpath.txt
+
+# Запустите через Java (важно: include target/classes, target/test-classes и classpath)
+java -cp "target/classes;target/test-classes;$CLASSPATH" com.dentapinos.dataguard.TestRunner all
+
+# Только юнит-тесты
+java -cp "target/classes;target/test-classes;$CLASSPATH" com.dentapinos.dataguard.TestRunner unit
+
+# Только интеграционные тесты
+java -cp "target/classes;target/test-classes;$CLASSPATH" com.dentapinos.dataguard.TestRunner it
+```
+# Скомпилируйте тесты
+./mvnw test-compile
+
+# Получите classpath для зависимостей и сохраните в файл
+./mvnw dependency:build-classpath -q -DincludeScope=test -Dmdep.outputFile=classpath.txt
+
+# Прочитайте classpath из файла
+$CLASSPATH = Get-Content classpath.txt
+
+# Запустите через Java (используйте ; вместо : как разделитель)
+java -cp "target/classes;target/test-classes;$CLASSPATH" com.dentapinos.dataguard.TestRunner all
+```
+
+**Кастомный слушатель `MyCustomListener.java`** (`src/main/java/com/dentapinos/dataguard/MyCustomListener.java`) отображает результаты тестов с эмодзи:
+
+- 🚀 Запуск тест-планов (количество корневых элементов)
+- 🧪 Запуск теста (имя теста и legacy имя)
+- ✅ Успешное выполнение
+- ⚠️ Прервано
+- ❌ Ошибка (с выводом stacktrace)
+- 🏁 Завершение тест-плана
+
+**Преимущества кастомного запускатора:**
+
+- Форматированный вывод результатов тестов
+- Возможность кастомизации логики запуска
+- Интеграция с CI/CD через Java API
+
+**Альтернативно**, можно использовать стандартный Maven:
+
+```bash
+# Только юнит-тесты
+./mvnw test
+
+# Только интеграционные тесты
+./mvnw verify
+
+# Все тесты (юнит + интеграционные)
+./mvnw clean verify
 ```
 
 ---

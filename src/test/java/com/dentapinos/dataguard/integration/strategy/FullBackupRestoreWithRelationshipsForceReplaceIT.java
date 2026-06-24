@@ -37,7 +37,7 @@ import static org.junit.jupiter.api.Assertions.*;
         classes = { TestDatabaseConfig.class })
 @WithResetDatabaseBeforeEach
 @DisplayName("IT - FORCE_REPLACE режим восстановления с полной перезаписью данных")
-class FullBackupRestoreWithRelationshipsForceReplaceTest extends BaseResetDatabaseTest {
+class FullBackupRestoreWithRelationshipsForceReplaceIT extends BaseResetDatabaseTest {
 
     @Autowired
     private BackupFacade backupFacade;

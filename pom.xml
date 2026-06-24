@@ -35,6 +35,7 @@
     <!-- ============================================= -->
     <properties>
         <java.version>17</java.version>
+        <test.mode>all</test.mode>
         <lombok.version>1.18.30</lombok.version>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
@@ -154,6 +155,18 @@
             <artifactId>spring-boot-starter-jdbc</artifactId>
         </dependency>
 
+        <!-- ============================================= -->
+        <!-- FOR CI/CD для кастомного запуска тестов       -->
+        <!-- ============================================= -->
+
+        <!-- API запуска тестов программно -->
+        <dependency>
+            <groupId>org.junit.platform</groupId>
+            <artifactId>junit-platform-launcher</artifactId>
+            <version>1.10.2</version>
+            <scope>test</scope>
+        </dependency>
+
     </dependencies>
 
     <!-- ============================================= -->
@@ -174,6 +187,56 @@
                     </excludes>
                 </configuration>
             </plugin>
+
+            <!-- ============================================= -->
+            <!-- Плагины разделения юнит тестов и интеграционных -->
+            <!-- ============================================= -->
+            <!-- ЮНИТ-ТЕСТЫ: surefire -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <version>3.1.2</version>
+                <configuration>
+                    <includes>
+                        <include>**/*Test.java</include>
+                    </includes>
+                    <excludes>
+                        <exclude>**/*IT.java</exclude>
+                    </excludes>
+                </configuration>
+            </plugin>
+
+            <!-- ИНТЕГРАЦИОННЫЕ ТЕСТЫ: failsafe -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-failsafe-plugin</artifactId>
+                <version>3.1.2</version>
+                <configuration>
+                    <includes>
+                        <include>**/*IT.java</include>
+                    </includes>
+                </configuration>
+                <executions>
+                    <!-- ВАЖНО: привязываем к фазам цикла, чтобы mvn verify запускал и IT -->
+                    <execution>
+                        <id>integration-tests</id>
+                        <goals>
+                            <goal>integration-test</goal>
+                            <goal>verify</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
+
+            <!-- плагин запуска кастомного запускатора тестов -->
+            <!-- Для ручного запуска: mvn dependency:build-classpath -Dmdep.outputFile=classpath.txt -->
+            <!-- Затем: java -cp "target/classes;target/test-classes;$(cat classpath.txt)" com.dentapinos.dataguard.TestRunner -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-dependency-plugin</artifactId>
+                <version>3.6.0</version>
+            </plugin>
+            <!-- ============================================= -->
 
             <!-- Maven Compiler Plugin with Lombok support -->
             <plugin>
