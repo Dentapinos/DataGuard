@@ -229,8 +229,6 @@
             </plugin>
 
             <!-- плагин запуска кастомного запускатора тестов -->
-            <!-- Для ручного запуска: mvn dependency:build-classpath -Dmdep.outputFile=classpath.txt -->
-            <!-- Затем: java -cp "target/classes;target/test-classes;$(cat classpath.txt)" com.dentapinos.dataguard.TestRunner -->
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-dependency-plugin</artifactId>
