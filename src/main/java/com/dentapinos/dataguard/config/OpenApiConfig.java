@@ -10,6 +10,7 @@ import jakarta.validation.constraints.NotBlank;
 import lombok.Getter;
 import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.boot.context.properties.NestedConfigurationProperty;
 import org.springframework.context.annotation.Bean;
@@ -37,7 +38,8 @@ import java.util.List;
 public class OpenApiConfig {
 
     @NotBlank(message = "app.server.base-url must be specified")
-    private String baseUrl = "http://localhost:8080";
+    @Value("${app.server.base-url:http://localhost:8080}")
+    private String baseUrl;
 
     @NotBlank(message = "app.server.email must be specified")
     @Email(message = "app.server.email must be a valid email address")

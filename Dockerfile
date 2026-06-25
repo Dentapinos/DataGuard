@@ -33,6 +33,10 @@ RUN addgroup -S appgroup && adduser -S appuser -G appgroup
 # Копируем JAR-файл из этапа сборки
 COPY --from=builder /build/target/*.jar app.jar
 
+# Копируем скрипт healthcheck
+COPY healthcheck.sh /app/healthcheck.sh
+RUN chmod +x /app/healthcheck.sh
+
 # Создаем директорию для резервных копий
 RUN mkdir -p /var/backups && chown -R appuser:appgroup /var/backups /app
 
