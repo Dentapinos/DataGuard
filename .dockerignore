@@ -1,0 +1,56 @@
+# =============================================
+# .dockerignore для DataGuard
+# =============================================
+
+# Git
+.git
+.gitignore
+.gitattributes
+
+# Maven
+.mvn/
+mvnw
+mvnw.cmd
+pom.xml
+dependency-reduced-pom.xml
+
+# IDE
+.idea/
+*.iml
+*.ipr
+*.iws
+
+# Target directories ( Builds )
+target/
+build/
+
+# Test files (не нужны в образе)
+**/*Test.java
+**/*IT.java
+**/*test*.java
+
+# Logs
+*.log
+logs/
+
+# Documentation (не нужны в prod)
+README.md
+*.md
+src/main/resources/docs/
+
+# Local config
+application-local.properties
+application-dev.properties
+application-test.properties
+
+# Docker
+Dockerfile*
+docker-compose*.yml
+.dockerignore
+
+# Coverage reports
+coverage/
+jacoco.exec
+
+# classpath files
+classpath.txt
