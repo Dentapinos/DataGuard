@@ -1,6 +1,6 @@
 # Data Guard — Сервис резервного копирования и восстановления баз данных
 
-![Center Beer Beckup](src/main/resources/static/docs/dg.jpg)
+![Center Beer Beckup](src/main/resources/docs/dg.jpg)
 
 > **Project**: Data Guard  
 > **Package**: `com.dentapinos.dataguard`  
