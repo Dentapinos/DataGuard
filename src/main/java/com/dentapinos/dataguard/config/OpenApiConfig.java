@@ -43,7 +43,7 @@ public class OpenApiConfig {
 
     @NotBlank(message = "app.server.email must be specified")
     @Email(message = "app.server.email must be a valid email address")
-    private String email = "Ladchenkovd@gmail.com";
+    private String email = "Ladchenkovden@gmail.com";
 
     @NestedConfigurationProperty
     @Valid
