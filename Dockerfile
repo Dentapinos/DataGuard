@@ -43,9 +43,6 @@ RUN mkdir -p /var/backups && chown -R appuser:appgroup /var/backups /app
 # Переключаемся на непривилегированного пользователя
 USER appuser
 
-# Порт приложения
-EXPOSE 8080
-
 # Настройки JVM для контейнера
 ENV JAVA_OPTS="-Xmx512m -Xms256m -XX:+UseG1GC -XX:MaxGCPauseMillis=200"
 
