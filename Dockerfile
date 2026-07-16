@@ -43,8 +43,5 @@ RUN mkdir -p /var/backups && chown -R appuser:appgroup /var/backups /app
 # Переключаемся на непривилегированного пользователя
 USER appuser
 
-# Настройки JVM для контейнера
-ENV JAVA_OPTS="-Xmx512m -Xms256m -XX:+UseG1GC -XX:MaxGCPauseMillis=200"
-
 # Точка входа с поддержкой SIGTERM и SIGINT
 ENTRYPOINT ["tini", "--", "java", "-Dspring.profiles.active=prod", "-jar", "app.jar"]
