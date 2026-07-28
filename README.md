@@ -1142,6 +1142,11 @@ private String password = "password123";
 
 ## 📝 История изменений
 
+### v0.0.2-SNAPSHOT (2026-07-28)
+- 🐛 **FileSystemBackupStorage.copy()** — исправлен баг: параметр `database` игнорировался, пути строились как `{basePath}/{tier}/{file}` вместо `{basePath}/{database}/{tier}/{file}`
+- 🐛 **BackupTierPromoter.promote()** — исправлен `UnsupportedTemporalTypeException` при использовании `Period.ofMonths()`/`Period.ofYears()` с `Instant.minus()` (переключено на `LocalDate`)
+- 🐛 **Тесты** — обновлён `shouldCopyMostRecentSuccessfulBackup` для соответствия новому поведению сравнения дат
+
 ### v0.0.1-SNAPSHOT (2026-06-22)
 - ✅ Базовая функциональность резервного копирования
 - ✅ REST API для бэкапов и восстановления
@@ -1154,4 +1159,4 @@ private String password = "password123";
 
 ---
 
-**Последнее обновление**: 2026-06-22
+**Последнее обновление**: 2026-07-28
