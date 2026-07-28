@@ -41,6 +41,10 @@
         <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
         <!-- Для Java компилятора -->
         <maven.compiler.encoding>UTF-8</maven.compiler.encoding>
+        <java.version>17</java.version>
+        <!-- Override Testcontainers for Docker Desktop 29.x compatibility -->
+        <!-- See: https://github.com/testcontainers/testcontainers-java/issues/11422 -->
+        <testcontainers.version>1.21.4</testcontainers.version>
     </properties>
 
     <!-- ============================================= -->
@@ -112,19 +116,16 @@
         <dependency>
             <groupId>org.testcontainers</groupId>
             <artifactId>testcontainers</artifactId>
-            <version>1.19.7</version>
             <scope>test</scope>
         </dependency>
         <dependency>
             <groupId>org.testcontainers</groupId>
             <artifactId>mysql</artifactId>
-            <version>1.19.7</version>
             <scope>test</scope>
         </dependency>
         <dependency>
             <groupId>org.testcontainers</groupId>
             <artifactId>junit-jupiter</artifactId>
-            <version>1.19.7</version>
             <scope>test</scope>
         </dependency>
 
@@ -168,6 +169,20 @@
         </dependency>
 
     </dependencies>
+
+    <dependencyManagement>
+        <dependencies>
+            <!-- Override Testcontainers version for Docker Desktop 29.x compatibility -->
+            <!-- Must be imported BEFORE spring-boot-starter-parent BOM to take precedence -->
+            <dependency>
+                <groupId>org.testcontainers</groupId>
+                <artifactId>testcontainers-bom</artifactId>
+                <version>${testcontainers.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
 
     <!-- ============================================= -->
     <!-- BUILD CONFIGURATION                           -->
