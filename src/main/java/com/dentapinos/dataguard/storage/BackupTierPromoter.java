@@ -12,7 +12,9 @@ import org.springframework.stereotype.Service;
 import java.io.IOException;
 import java.io.InputStream;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.time.Period;
+import java.time.ZoneId;
 import java.util.Comparator;
 import java.util.Optional;
 
@@ -48,8 +50,8 @@ public class BackupTierPromoter {
      */
     public void promote(String database, BackupTier fromTier, BackupTier toTier, Period period) {
         try {
-            Instant now = Instant.now();
-            Instant fromInstant = now.minus(period);
+            LocalDate now = LocalDate.now(ZoneId.of("UTC"));
+            LocalDate fromLocalDate = now.minus(period);
 
             log.info("[BACKUP_PROMOTION] Запуск promotion: from={} to={} period={}", fromTier, toTier, period);
 
@@ -58,13 +60,15 @@ public class BackupTierPromoter {
             Optional<String> candidate = files.stream()
                     // 1. только успешные бэкапы
                     .filter(fileName -> isSuccessful(fileName, fromTier, database))
-                    // 2. только в окне [fromInstant, now]
+                    // 2. только в окне [fromLocalDate, now]
                     .filter(fileName -> {
                         try {
-                            Instant created = backupStorage
+                            LocalDate createdDate = backupStorage
                                     .getCreationTime(fromTier, database, fileName)
-                                    .toInstant();
-                            return !created.isBefore(fromInstant) && !created.isAfter(now);
+                                    .toInstant()
+                                    .atZone(ZoneId.of("UTC"))
+                                    .toLocalDate();
+                            return !createdDate.isBefore(fromLocalDate) && !createdDate.isAfter(now);
                         } catch (IOException e) {
                             log.warn("[BACKUP_PROMOTION] Не удалось прочитать атрибуты файла {} (tier={}): {}",
                                     fileName, fromTier, e.getMessage(), e);

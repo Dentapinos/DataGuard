@@ -2,7 +2,6 @@ package com.dentapinos.dataguard.storage.filesystem;
 
 
 import com.dentapinos.dataguard.config.BackupProperties;
-import com.dentapinos.dataguard.config.FileSystemStorageProperties;
 import com.dentapinos.dataguard.entity.storage.BackupFileInfo;
 import com.dentapinos.dataguard.enums.BackupTier;
 import com.dentapinos.dataguard.exception.BackupFileNotFoundException;
@@ -223,28 +222,19 @@ public class FileSystemBackupStorage implements BackupStorage {
     }
 
     public String copy(String fileName, BackupTier fromTier, BackupTier toTier, String database) throws IOException {
-        // Формируем исходный путь: database/tier/fileName
-        String sourcePath = String.format("%s/%s", fromTier, fileName);
+        Path source = resolvePath(fromTier, database, fileName);
+        Path target = resolvePath(toTier, database, fileName);
 
-        // Формируем целевой путь: database/tier/fileName
-        String targetPath = String.format("%s/%s", toTier, fileName);
+        // Выполняем копирование
+        processCopy(source, target);
 
-        // Выполняем копирование через сервис хранения
-        processCopy(sourcePath, targetPath);
-
-        log.info("Файл {} скопирован из {} в {} для базы данных {}",
+        log.info("[BACKUP_STORAGE] Файл {} скопирован из {} в {} для базы данных {}",
                 fileName, fromTier, toTier, database);
 
-        return targetPath;
+        return fileName;
     }
 
-    private void processCopy(String sourcePath, String targetPath) throws IOException {
-        FileSystemStorageProperties fileSystem1 = backupProperties.getFileSystem();
-        Path basePath = Path.of(fileSystem1.getBasePath());
-
-        Path source = basePath.resolve(sourcePath);
-        Path target = basePath.resolve(targetPath);
-
+    private void processCopy(Path source, Path target) throws IOException {
         // Создаём родительские директории для целевого пути
         Files.createDirectories(target.getParent());
 
@@ -258,15 +248,15 @@ public class FileSystemBackupStorage implements BackupStorage {
             // Атомарно перемещаем во временный файл (переименовывает)
             Files.move(tempFile, target, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
 
-            log.debug("Файл скопирован (атомарно): {} -> {}", source, target);
+            log.debug("[BACKUP_STORAGE] Файл скопирован (атомарно): {} -> {}", source, target);
         } catch (IOException e) {
             // Удаляем временный файл в случае ошибки
             try {
                 Files.deleteIfExists(tempFile);
             } catch (IOException deleteException) {
-                log.warn("Не удалось удалить временный файл при копировании: {}", tempFile, deleteException);
+                log.warn("[BACKUP_STORAGE] Не удалось удалить временный файл при копировании: {}", tempFile, deleteException);
             }
-            log.error("Ошибка копирования файла: {} -> {}, error={}", source, target, e.getMessage(), e);
+            log.error("[BACKUP_STORAGE] Ошибка копирования файла: {} -> {}, error={}", source, target, e.getMessage(), e);
             throw e;
         }
     }

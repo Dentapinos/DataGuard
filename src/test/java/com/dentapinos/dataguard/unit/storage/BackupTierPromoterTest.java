@@ -18,7 +18,9 @@ import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.nio.file.attribute.FileTime;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.time.Period;
+import java.time.ZoneId;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -109,9 +111,9 @@ class BackupTierPromoterTest {
             when(backupStorage.list(fromTier, database))
                     .thenReturn(List.of(oldFile, newFile));
 
-            Instant now = Instant.now();
-            Instant oldCreated = now.minusSeconds(7200); // 2 часа назад
-            Instant newCreated = now.minusSeconds(1800); // 30 минут назад
+            // Оба файла созданы сегодня (UTC) — попадают в окно 1 дня
+            Instant oldCreated = Instant.now().minusSeconds(7200); // 2 часа назад
+            Instant newCreated = Instant.now().minusSeconds(1800); // 30 минут назад
 
             when(backupStorage.getCreationTime(fromTier, database, oldFile))
                     .thenReturn(FileTime.from(oldCreated));
