@@ -70,7 +70,7 @@ public abstract class AbstractRestoreStrategy implements RestoreStrategy {
             // Получаем порядок таблиц из бэкапа (если он задан)
             List<String> tableOrder = backup.tableOrder();
             if (tableOrder != null && !tableOrder.isEmpty()) {
-                log.info("[RESTORE_ORDER] Используем порядок таблиц из бэкапа: {}", tableOrder);
+                log.debug("[RESTORE_ORDER] Используем порядок таблиц из бэкапа: {}", tableOrder);
             } else {
                 log.warn("[RESTORE_ORDER] Порядок таблиц в бэкапе не задан, используем порядок из data.keySet()");
             }
@@ -135,7 +135,7 @@ public abstract class AbstractRestoreStrategy implements RestoreStrategy {
             RestoreStats stats) {
 
         if (rows == null || rows.isEmpty()) {
-            log.info("Table {}: no rows in backup, skipping insert", tableName);
+            log.debug("Table {}: no rows in backup, skipping insert", tableName);
             stats.setTablesProcessed(stats.getTablesProcessed() + 1);
             return;
         }

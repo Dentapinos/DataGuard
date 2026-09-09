@@ -210,7 +210,7 @@ public class SchemaCompatibilityService {
             case RELAXED_SCHEMA -> // просто логируем — эту таблицу потом можно будет пропустить при импорте
                 // (в importData проверим наличие таблицы, и если её нет — пропустим данные)
                     log.warn("Таблица {} из резервной копии не найдена в целевой БД {}, данные будут пропущены", tableName, targetDatabase);
-            case AUTO_CREATE_TABLES -> log.info("Таблица {} не найдена в целевой БД {}, создаём на основе схемы из резервной копии", tableName, targetDatabase);
+            case AUTO_CREATE_TABLES -> log.debug("Таблица {} не найдена в целевой БД {}, создаём на основе схемы из резервной копии", tableName, targetDatabase);
         }
     }
 
@@ -252,11 +252,11 @@ public class SchemaCompatibilityService {
                 switch (policy.schemaPolicy()) {
                     case STRICT_SCHEMA -> throw new IllegalStateException(
                             "Колонка " + tableName + "." + colName + " есть в резервной копии, но отсутствует в целевой БД");
-                    case RELAXED_SCHEMA -> log.info(
+                    case RELAXED_SCHEMA -> log.warn(
                             "Колонка {}.{} есть в резервной копии, но отсутствует в целевой БД; значение будет проигнорировано при импорте",
                             tableName, colName
                     );
-                    case AUTO_CREATE_TABLES -> log.info("Добавляем отсутствующую колонку {}.{} в целевую БД {}", tableName, colName, targetDatabase);
+                    case AUTO_CREATE_TABLES -> log.debug("Добавляем отсутствующую колонку {}.{} в целевую БД {}", tableName, colName, targetDatabase);
                 }
             }
         }
@@ -268,7 +268,7 @@ public class SchemaCompatibilityService {
                     case STRICT_SCHEMA -> throw new IllegalStateException(
                             "Колонка " + tableName + "." + colName + " есть в целевой БД, но отсутствует в резервной копии");
                     case RELAXED_SCHEMA, AUTO_CREATE_TABLES -> // Ок: при вставке они получат DEFAULT/NULL
-                            log.info(
+                            log.debug(
                                     "Колонка {}.{} есть в целевой БД, но отсутствует в резервной копии; будет заполнено значением по умолчанию/NULL",
                                     tableName, colName
                             );

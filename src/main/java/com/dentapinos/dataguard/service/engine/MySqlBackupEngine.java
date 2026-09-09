@@ -45,7 +45,7 @@ public class MySqlBackupEngine implements BackupEngine {
 
         ExportStats stats = new ExportStats();
         Map<String, List<Map<String, Object>>> data = dataExporter.exportData(credentials, schema, tableOrder, stats);
-        log.info("[BACKUP_ENGINE] Экспорт завершен: tablesExported={}, totalRows={}, data.keySet()={}", stats.getTablesProcessed(), stats.getTotalRows(), data.keySet());
+        log.debug("[BACKUP_ENGINE] Экспорт завершен: tablesExported={}, totalRows={}, data.keySet()={}", stats.getTablesProcessed(), stats.getTotalRows(), data.keySet());
 
         Instant finishedAt = Instant.now();
 

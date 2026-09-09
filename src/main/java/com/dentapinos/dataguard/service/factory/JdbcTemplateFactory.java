@@ -97,7 +97,7 @@ public class JdbcTemplateFactory {
 
     @PreDestroy
     public void destroy() {
-        log.info("Closing all HikariDataSources...");
+        log.debug("Closing all HikariDataSources...");
         dataSources.values().forEach(ds -> {
             try {
                 ds.close();
@@ -107,7 +107,7 @@ public class JdbcTemplateFactory {
             }
         });
         dataSources.clear();
-        log.info("All HikariDataSources closed successfully");
+        log.debug("All HikariDataSources closed successfully");
     }
 
 }

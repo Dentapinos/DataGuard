@@ -74,7 +74,7 @@ public class ZipBackupStorageService {
                 backupStorage.save(tier, database, backupName, in);
             }
 
-            log.info("[BACKUP_ZIP_SERVICE] Бэкап сохранён в zip: tier={}, database={}, file={}", tier, database, backupName);
+            log.debug("[BACKUP_ZIP_SERVICE] Бэкап сохранён в zip: tier={}, database={}, file={}", tier, database, backupName);
         } finally {
             try {
                 Files.deleteIfExists(tempFile);

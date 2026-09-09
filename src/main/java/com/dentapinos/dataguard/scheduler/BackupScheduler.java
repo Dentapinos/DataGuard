@@ -53,7 +53,7 @@ public class BackupScheduler {
             total.getAndIncrement();
             try {
                 String backupName = backupFacade.backupAndStore(dbName, credentials);
-                log.info("[BACKUP_PIPELINE] Бэкап для db={} успешно завершён, файл={}", dbName, backupName);
+                log.debug("[BACKUP_PIPELINE] Бэкап для db={} успешно завершён, файл={}", dbName, backupName);
                 success.getAndIncrement();
             } catch (IOException e) {
                 log.error("[BACKUP_PIPELINE] Ошибка ввода-вывода при бэкапе db={}", dbName, e);

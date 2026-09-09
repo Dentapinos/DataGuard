@@ -127,7 +127,7 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(NoResourceFoundException.class)
     public ResponseEntity<Void> handleNoResourceFoundException(NoResourceFoundException ex) {
         // Игнорируем сканеры уязвимостей и запросы к отсутствующим статическим ресурсам (favicon, .env, Chrome DevTools)
-        log.info("[IGNORE] Сканирование: {}", ex.getMessage());
+        log.debug("[IGNORE] Сканирование: {}", ex.getMessage());
         return ResponseEntity.status(HttpStatus.NOT_FOUND).build();
     }
 

@@ -66,12 +66,12 @@ public class BackupRetentionManager {
                     })
                     .toList();
 
-            log.info("[BACKUP_RETENTION] найдено {} файлов для удаления на уровне {}", filesToDelete.size(), tier);
+            log.debug("[BACKUP_RETENTION] найдено {} файлов для удаления на уровне {}", filesToDelete.size(), tier);
 
             for (String fileName : filesToDelete) {
                 try {
                     backupStorage.delete(tier, database, fileName);
-                    log.info("[BACKUP_RETENTION] удалена старая резервная копия: уровень={} файл={}", tier, fileName);
+                    log.debug("[BACKUP_RETENTION] удалена старая резервная копия: уровень={} файл={}", tier, fileName);
                 } catch (IOException e) {
                     log.warn("[BACKUP_RETENTION] не удалось удалить резервную копию: уровень={} файл={}",
                             tier, fileName, e);

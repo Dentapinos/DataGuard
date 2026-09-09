@@ -43,7 +43,7 @@ public class FileSystemBackupStorage implements BackupStorage {
             // Атомарно перемещаем во временный файл (переименовывает)
             Files.move(tempFile, filePath, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
 
-            log.info("[BACKUP_STORAGE] Успешно сохранён бэкап: tier={}, database={}, file={}",
+            log.debug("[BACKUP_STORAGE] Успешно сохранён бэкап: tier={}, database={}, file={}",
                     tier, database, fileName);
         } catch (IOException e) {
             // Удаляем временный файл в случае ошибки
@@ -64,7 +64,7 @@ public class FileSystemBackupStorage implements BackupStorage {
         Path filePath = resolvePath(tier, database, backupName);
         try {
             InputStream in = Files.newInputStream(filePath);
-            log.info("[BACKUP_STORAGE] Успешно загружен бэкап: tier={}, database={}, file={}",
+            log.debug("[BACKUP_STORAGE] Успешно загружен бэкап: tier={}, database={}, file={}",
                     tier, database, backupName);
             return in;
         } catch (NoSuchFileException e) {
@@ -83,7 +83,7 @@ public class FileSystemBackupStorage implements BackupStorage {
         Path filePath = resolvePath(tier, database, backupName);
         try {
             Files.deleteIfExists(filePath);
-            log.info("[BACKUP_STORAGE] Бэкап удалён: tier={}, database={}, file={}",
+            log.debug("[BACKUP_STORAGE] Бэкап удалён: tier={}, database={}, file={}",
                     tier, database, backupName);
         } catch (IOException e) {
             log.error("[BACKUP_STORAGE] Ошибка удаления бэкапа: tier={}, database={}, file={}, error={}",
@@ -96,7 +96,7 @@ public class FileSystemBackupStorage implements BackupStorage {
     public List<String> list(@Nullable BackupTier tier, String database) throws IOException {
         Path dbPath = resolvePath(tier, database);
         if (!Files.exists(dbPath) || !Files.isDirectory(dbPath)) {
-            log.info("[BACKUP_STORAGE] Папка бэкапов не найдена или не является директорией: {} tier={}, database={}",
+            log.warn("[BACKUP_STORAGE] Папка бэкапов не найдена или не является директорией: {} tier={}, database={}",
                     dbPath, tier, database);
             return List.of();
         }
@@ -228,7 +228,7 @@ public class FileSystemBackupStorage implements BackupStorage {
         // Выполняем копирование
         processCopy(source, target);
 
-        log.info("[BACKUP_STORAGE] Файл {} скопирован из {} в {} для базы данных {}",
+        log.debug("[BACKUP_STORAGE] Файл {} скопирован из {} в {} для базы данных {}",
                 fileName, fromTier, toTier, database);
 
         return fileName;

@@ -68,13 +68,13 @@ public class BackupScheduleProperties {
      */
     @PostConstruct
     public void logConfiguration() {
-        log.info("Backup schedule configured:");
-        log.info("  - Daily backup: {}", dailyBackupCron);
-        log.info("  - Promote daily to weekly: {}", promoteDailyToWeeklyCron);
-        log.info("  - Promote weekly to monthly: {}", promoteWeeklyToMonthlyCron);
-        log.info("  - Promote monthly to semi-annual: {}", promoteMonthlyToSemiAnnualCron);
-        log.info("  - Promote semi-annual to annual: {}", promoteSemiAnnualToAnnualCron);
-        log.info("  - Retention: {}", retentionCron);
-        log.info("  - Timezone: {}", zoneId);
+        log.debug("Backup schedule configured:");
+        log.debug("  - Daily backup: {}", dailyBackupCron);
+        log.debug("  - Promote daily to weekly: {}", promoteDailyToWeeklyCron);
+        log.debug("  - Promote weekly to monthly: {}", promoteWeeklyToMonthlyCron);
+        log.debug("  - Promote monthly to semi-annual: {}", promoteMonthlyToSemiAnnualCron);
+        log.debug("  - Promote semi-annual to annual: {}", promoteSemiAnnualToAnnualCron);
+        log.debug("  - Retention: {}", retentionCron);
+        log.debug("  - Timezone: {}", zoneId);
     }
 }

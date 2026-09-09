@@ -53,7 +53,7 @@ public class BackupTierPromoter {
             LocalDate now = LocalDate.now(ZoneId.of("UTC"));
             LocalDate fromLocalDate = now.minus(period);
 
-            log.info("[BACKUP_PROMOTION] Запуск promotion: from={} to={} period={}", fromTier, toTier, period);
+            log.debug("[BACKUP_PROMOTION] Запуск promotion: from={} to={} period={}", fromTier, toTier, period);
 
             var files = backupStorage.list(fromTier, database);
 
@@ -96,7 +96,7 @@ public class BackupTierPromoter {
 
             // Копируем файл (FileSystemBackupStorage.copy атомарно перезапишет, если существует)
             backupStorage.copy(candidate.get(), fromTier, toTier, database);
-            log.info("[BACKUP_PROMOTION] Успешный promotion бэкапа {} из {} в {}", candidate.get(), fromTier, toTier);
+            log.debug("[BACKUP_PROMOTION] Успешный promotion бэкапа {} из {} в {}", candidate.get(), fromTier, toTier);
 
         } catch (Exception e) {
             log.error("[BACKUP_PROMOTION] Необработанная ошибка promotion из {} в {}", fromTier, toTier, e);

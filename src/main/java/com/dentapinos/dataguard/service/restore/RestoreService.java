@@ -117,7 +117,7 @@ public class RestoreService {
 
         // === 3.5. Фильтрация таблиц (если указаны) ===
         BackupFile filteredBackup = TableFilter.filterTables(backupFile, tables);
-        log.info("[TABLE_FILTER] Фильтрация таблиц: originalTables={}, filteredTables={}",
+        log.debug("[TABLE_FILTER] Фильтрация таблиц: originalTables={}, filteredTables={}",
                 backupFile.data().size(), filteredBackup.data().size());
 
         // === 3.5. Проверка совместимости схемы бэкапа и целевой БД ===
@@ -142,10 +142,10 @@ public class RestoreService {
             );
         } catch (Exception e) {
             log.warn("[RESTORE_ORDER] Ошибка при определении порядка восстановления: {}", e.getMessage());
-            log.info("[RESTORE_ORDER] Используем порядок таблиц из бэкапа как fallback");
+            log.warn("[RESTORE_ORDER] Используем порядок таблиц из бэкапа как fallback");
             restoreOrder = null; // Используем порядок из бэкапа
         }
-        log.info("[RESTORE_ORDER] Порядок восстановления: {}", restoreOrder != null ? restoreOrder : "(из бэкапа)");
+        log.debug("[RESTORE_ORDER] Порядок восстановления: {}", restoreOrder != null ? restoreOrder : "(из бэкапа)");
 
         // === 5. Импорт данных из бэкапа в целевую базу ===
         // RestoreStats будет накапливать статистику:
@@ -167,7 +167,7 @@ public class RestoreService {
                 }
             }
         }
-        log.info("[TABLE_SUMMARY] Запрошено таблиц: {}, в бэкапе: {}, пропущено (нет в бэкапе): {}",
+        log.debug("[TABLE_SUMMARY] Запрошено таблиц: {}, в бэкапе: {}, пропущено (нет в бэкапе): {}",
                 tables != null ? tables.size() : 0, backupData.size(), tablesMissingInBackup);
 
         // Получаем стратегию на основе режима восстановления

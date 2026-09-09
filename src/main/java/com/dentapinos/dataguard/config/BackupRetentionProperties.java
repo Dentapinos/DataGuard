@@ -49,11 +49,11 @@ public class BackupRetentionProperties {
      */
     @PostConstruct
     public void logConfiguration() {
-        log.info("Backup retention policy configured:");
-        log.info("  - Daily: {} days", dailyDays);
-        log.info("  - Weekly: {} weeks", weeklyWeeks);
-        log.info("  - Monthly: {} months", monthlyMonths);
-        log.info("  - Semi-annual: {} years", semiAnnualYears);
-        log.info("  - Annual: {} years", annualYears);
+        log.debug("Backup retention policy configured:");
+        log.debug("  - Daily: {} days", dailyDays);
+        log.debug("  - Weekly: {} weeks", weeklyWeeks);
+        log.debug("  - Monthly: {} months", monthlyMonths);
+        log.debug("  - Semi-annual: {} years", semiAnnualYears);
+        log.debug("  - Annual: {} years", annualYears);
     }
 }
