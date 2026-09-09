@@ -258,6 +258,36 @@
             font-weight: 600;
         }
 
+        .tier-usage-bar-container {
+            width: 100%;
+            height: 28px;
+            background: #e0e0e0;
+            border-radius: 14px;
+            overflow: hidden;
+            position: relative;
+            display: flex;
+            align-items: center;
+        }
+
+        .tier-usage-bar {
+            height: 100%;
+            background: linear-gradient(90deg, #4caf50 0%, #66bb6a 100%);
+            border-radius: 14px;
+            transition: width 0.3s ease;
+            min-width: 2px;
+        }
+
+        .tier-usage-text {
+            position: absolute;
+            left: 50%;
+            transform: translateX(-50%);
+            font-size: 0.8em;
+            font-weight: 600;
+            color: #2e7d32;
+            white-space: nowrap;
+            z-index: 1;
+        }
+
         .loading {
             text-align: center;
             padding: 50px;
@@ -397,7 +427,7 @@
 <body>
     <div class="container">
         <header>
-            <h1>🛡️ DataGuard Dashboard</h1>
+            <h1>🛡️ BackupService Dashboard</h1>
             <p>Мониторинг резервных копий баз данных</p>
         </header>
 
@@ -568,6 +598,17 @@
             return '';
         }
 
+        function getDaysWord(days) {
+            const absDays = Math.abs(days);
+            const lastDigit = absDays % 10;
+            const lastTwoDigits = absDays % 100;
+
+            if (lastTwoDigits >= 11 && lastTwoDigits <= 19) return 'дней';
+            if (lastDigit === 1) return 'день';
+            if (lastDigit >= 2 && lastDigit <= 4) return 'дня';
+            return 'дней';
+        }
+
         function renderDashboard(data) {
             const { databases, schedule, storage, safeMode } = data;
 
@@ -612,27 +653,40 @@
             `;
 
             // Storage Section
+            const statusColors = {
+                'OK': { color: '#4caf50', bg: '#e8f5e9', label: '✅ Норма' },
+                'WARNING': { color: '#ff9800', bg: '#fff3e0', label: '⚠️ Внимание' },
+                'CRITICAL': { color: '#f44336', bg: '#ffebee', label: '🚨 Критическое состояние' }
+            };
+            const statusInfo = statusColors[storage.status] || statusColors['OK'];
+
             html += `
                 <div class="section">
                     <h2>💾 Хранилище</h2>
                     <div class="storage-info">
                         <div class="storage-card">
-                            <h3>Использовано</h3>
-                            <p>${formatFileSize(storage.usedSpaceBytes)}</p>
-                        </div>
-                        <div class="storage-card">
-                            <h3>Всего доступно</h3>
+                            <h3>Общий размер диска</h3>
                             <p>${formatFileSize(storage.maxSpaceBytes)}</p>
                         </div>
                         <div class="storage-card">
-                            <h3>Заполненность</h3>
-                            <p>${storage.usagePercent.toFixed(2)}%</p>
-                            <div class="progress-bar-container">
-                                <div class="progress-bar ${getUsageClass(storage.usagePercent)}" 
-                                     style="width: ${Math.min(storage.usagePercent, 100)}%">
-                                    ${storage.usagePercent > 10 ? storage.usagePercent.toFixed(1) + '%' : ''}
-                                </div>
-                            </div>
+                            <h3>Сейчас занято</h3>
+                            <p>${formatFileSize(storage.usedSpaceBytes)} (${storage.usagePercent.toFixed(1)}%)</p>
+                        </div>
+                        <div class="storage-card">
+                            <h3>Бэкапы сейчас</h3>
+                            <p>${formatFileSize(storage.currentBackupBytes)}</p>
+                        </div>
+                    </div>
+
+                    <div class="storage-info" style="margin-top: 20px;">
+                        <div class="storage-card" style="border-left-color: ${statusInfo.color}; background: ${statusInfo.bg};">
+                            <h3 style="color: ${statusInfo.color};">${statusInfo.label}</h3>
+                            <p style="font-size: 1.3em; font-weight: 600;">
+                                В пике будет занято: ${formatFileSize(storage.peakTotalBytes)} (${storage.peakTotalPercent.toFixed(1)}% от диска)
+                            </p>
+                            <p style="color: #666; margin-top: 8px;">
+                                сейчас: ${formatFileSize(storage.usedSpaceBytes)} + бэкапы в пике: +${formatFileSize(storage.peakBackupAdditionBytes)} (с учётом 10% погрешности)
+                            </p>
                         </div>
                     </div>
                 </div>
@@ -670,15 +724,15 @@
                                     <th>Уровень</th>
                                     <th>Файлов</th>
                                     <th>Размер</th>
-                                    <th>Заполненность</th>
+                                    <th>Доля от хранилища</th>
                                 </tr>
                             </thead>
                             <tbody>
                 `;
 
                 db.tiers.forEach(tier => {
-                    const tierUsagePercent = storage.maxSpaceBytes > 0 
-                        ? (tier.totalSizeBytes * 100) / storage.maxSpaceBytes 
+                    const sharePercent = db.totalSizeBytes > 0 
+                        ? (tier.totalSizeBytes * 100) / db.totalSizeBytes 
                         : 0;
 
                     html += `
@@ -687,10 +741,11 @@
                             <td><strong>${tier.fileCount}</strong></td>
                             <td>${formatFileSize(tier.totalSizeBytes)}</td>
                             <td>
-                                <div class="progress-bar-container" style="width: 100px; height: 16px;">
-                                    <div class="progress-bar ${getUsageClass(tierUsagePercent)}" 
-                                         style="width: ${Math.min(tierUsagePercent, 100)}%">
+                                <div class="tier-usage-bar-container">
+                                    <div class="tier-usage-bar" 
+                                         style="width: ${sharePercent}%">
                                     </div>
+                                    <span class="tier-usage-text">${sharePercent.toFixed(1)}%</span>
                                 </div>
                             </td>
                         </tr>

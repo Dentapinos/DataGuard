@@ -1,8 +1,8 @@
 package com.dentapinos.dataguard.controller.api;
 
 import com.dentapinos.dataguard.config.DashboardAuthProperties;
-import com.dentapinos.dataguard.entity.dashboard.DashboardResponseDto;
-import com.dentapinos.dataguard.service.DashboardService;
+import com.dentapinos.dataguard.dashboard.DashboardResponseDto;
+import com.dentapinos.dataguard.dashboard.DashboardService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.annotation.Nullable;

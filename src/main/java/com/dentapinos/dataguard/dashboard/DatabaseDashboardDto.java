@@ -1,4 +1,4 @@
-package com.dentapinos.dataguard.entity.dashboard;
+package com.dentapinos.dataguard.dashboard;
 
 import java.util.List;
 

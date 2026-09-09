@@ -1,4 +1,4 @@
-package com.dentapinos.dataguard.entity.dashboard;
+package com.dentapinos.dataguard.dashboard;
 
 import com.dentapinos.dataguard.enums.BackupTier;
 
@@ -8,5 +8,7 @@ import com.dentapinos.dataguard.enums.BackupTier;
 public record TierInfo(
     BackupTier tier,
     long fileCount,
-    long totalSizeBytes
+    long totalSizeBytes,
+    long maxCount,
+    String retentionPeriod
 ) {}

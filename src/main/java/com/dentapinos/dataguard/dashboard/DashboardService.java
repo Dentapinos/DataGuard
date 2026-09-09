@@ -1,13 +1,9 @@
-package com.dentapinos.dataguard.service;
+package com.dentapinos.dataguard.dashboard;
 
 import com.dentapinos.dataguard.config.BackupDatabasesProperties;
 import com.dentapinos.dataguard.config.BackupProperties;
+import com.dentapinos.dataguard.config.BackupRetentionProperties;
 import com.dentapinos.dataguard.config.BackupScheduleProperties;
-import com.dentapinos.dataguard.entity.dashboard.DatabaseDashboardDto;
-import com.dentapinos.dataguard.entity.dashboard.DashboardResponseDto;
-import com.dentapinos.dataguard.entity.dashboard.ScheduleInfo;
-import com.dentapinos.dataguard.entity.dashboard.StorageInfo;
-import com.dentapinos.dataguard.entity.dashboard.TierInfo;
 import com.dentapinos.dataguard.enums.BackupTier;
 import com.dentapinos.dataguard.storage.BackupStorage;
 import lombok.RequiredArgsConstructor;
@@ -19,8 +15,8 @@ import java.nio.file.FileStore;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
-import java.util.Locale;
 
 /**
  * Сервис для сбора данных dashboard.
@@ -34,6 +30,7 @@ public class DashboardService {
     private final BackupDatabasesProperties databaseProperties;
     private final BackupScheduleProperties scheduleProperties;
     private final BackupProperties backupProperties;
+    private final BackupRetentionProperties retentionProperties;
 
     /**
      * Получает полные данные для dashboard.
@@ -86,15 +83,46 @@ public class DashboardService {
                     }
                 }
 
-                tiers.add(new TierInfo(tier, fileCount, totalSizeBytes));
+                long maxCount = calculateMaxCountForTier(tier);
+                String retentionPeriod = formatRetentionPeriod(tier);
+
+                tiers.add(new TierInfo(tier, fileCount, totalSizeBytes, maxCount, retentionPeriod));
             } catch (IOException e) {
                 log.warn("Failed to list files for tier={}, database={}: {}",
                         tier, databaseName, e.getMessage());
-                tiers.add(new TierInfo(tier, 0, 0));
+                tiers.add(new TierInfo(tier, 0, 0, 0, ""));
             }
         }
 
         return tiers;
+    }
+
+    /**
+     * Рассчитывает максимальное количество файлов для тира.
+     */
+    private long calculateMaxCountForTier(BackupTier tier) {
+        return switch (tier) {
+            case DAILY -> retentionProperties.getDailyDays();
+            case WEEKLY -> retentionProperties.getWeeklyWeeks();
+            case MONTHLY -> retentionProperties.getMonthlyMonths();
+            case SEMI_ANNUAL -> retentionProperties.getSemiAnnualYears() * 2;
+            case ANNUAL -> retentionProperties.getAnnualYears();
+            default -> 0;
+        };
+    }
+
+    /**
+     * Форматирует период хранения в читаемый вид.
+     */
+    private String formatRetentionPeriod(BackupTier tier) {
+        return switch (tier) {
+            case DAILY -> retentionProperties.getDailyDays() + " дн.";
+            case WEEKLY -> retentionProperties.getWeeklyWeeks() + " нед.";
+            case MONTHLY -> retentionProperties.getMonthlyMonths() + " мес.";
+            case SEMI_ANNUAL -> retentionProperties.getSemiAnnualYears() + " лет";
+            case ANNUAL -> retentionProperties.getAnnualYears() + " лет";
+            default -> "";
+        };
     }
 
     /**
@@ -137,29 +165,156 @@ public class DashboardService {
         long maxSpaceBytes = 0;
         double usagePercent = 0.0;
 
+        long currentBackupBytes = 0;
+        long peakBackupAdditionBytes = 0;
+        long peakTotalBytes = 0;
+        double peakTotalPercent = 0.0;
+
         if (Files.exists(path) && Files.isDirectory(path)) {
             try {
-                // Подсчёт использованного пространства
-                usedSpaceBytes = calculateDirectorySize(path);
+                // 1. Текущий размер ВСЕХ файлов на диске
+//                usedSpaceBytes = calculateDirectorySize(path);
+                usedSpaceBytes = 500_000;
 
-                // Получение информации о файловом хранилище
+                // 2. Общий размер диска
                 FileStore fileStore = Files.getFileStore(path);
-                maxSpaceBytes = fileStore.getTotalSpace();
+//                maxSpaceBytes = fileStore.getTotalSpace();
+                maxSpaceBytes = 400_000;
 
                 if (maxSpaceBytes > 0) {
                     usagePercent = (usedSpaceBytes * 100.0) / maxSpaceBytes;
                 }
+
+                // 3. Текущий размер бэкапов (сумма всех DAILY файлов)
+                currentBackupBytes = calculateCurrentBackupSize();
+
+                // 4. Расчёт пикового добавления бэкапов
+                peakBackupAdditionBytes = calculatePeakBackupAddition(currentBackupBytes);
+
+                // 5. Итого в пике: занято сейчас + будущие бэкапы
+                peakTotalBytes = usedSpaceBytes + peakBackupAdditionBytes;
+
+                // 6. Процент от общего диска
+                if (maxSpaceBytes > 0) {
+                    peakTotalPercent = (peakTotalBytes * 100.0) / maxSpaceBytes;
+                }
+
             } catch (IOException e) {
                 log.warn("Failed to calculate storage info for path={}: {}", basePath, e.getMessage());
             }
+        }
+
+        // Определяем статус по пиковому заполнению
+        StorageStatus status;
+        if (peakTotalPercent >= 90) {
+            status = StorageStatus.CRITICAL;
+        } else if (peakTotalPercent >= 80) {
+            status = StorageStatus.WARNING;
+        } else {
+            status = StorageStatus.OK;
         }
 
         return new StorageInfo(
                 basePath,
                 usedSpaceBytes,
                 maxSpaceBytes,
-                Math.round(usagePercent * 100.0) / 100.0
+                Math.round(usagePercent * 100.0) / 100.0,
+                currentBackupBytes,
+                peakBackupAdditionBytes,
+                peakTotalBytes,
+                Math.round(peakTotalPercent * 100.0) / 100.0,
+                status
         );
+    }
+
+    /**
+     * Рассчитывает текущий размер всех бэкапов (сумма файлов из всех тиров).
+     */
+    private long calculateCurrentBackupSize() {
+        long totalSize = 0;
+
+        for (BackupDatabasesProperties.DatabaseConfig dbConfig : databaseProperties.getDatabases()) {
+            String databaseName = dbConfig.getDatabaseName();
+            
+            // Суммируем все тиры: DAILY, WEEKLY, MONTHLY, SEMI_ANNUAL, ANNUAL
+            for (BackupTier tier : BackupTier.values()) {
+                try {
+                    List<String> files = backupStorage.list(tier, databaseName);
+                    for (String fileName : files) {
+                        try {
+                            totalSize += backupStorage.getFileSize(tier, databaseName, fileName);
+                        } catch (IOException e) {
+                            log.debug("Failed to get file size for tier={} file={}: {}", tier, fileName, e.getMessage());
+                        }
+                    }
+                } catch (IOException e) {
+                    log.debug("Failed to list files for tier={} db={}: {}", tier, databaseName, e.getMessage());
+                }
+            }
+        }
+
+        return totalSize;
+    }
+
+    /**
+     * Рассчитывает пиковый размер бэкапов.
+     * <p>
+     * Логика:
+     * 1. Для каждой базы берём размер самого свежего бэкапа (DAILY)
+     * 2. Считаем суммарное количество слотов по всем тирам (maxCount для каждого тира)
+     * 3. peakForDb = latestBackupSize × totalSlots
+     * 4. Суммируем peakForDb по всем базам
+     * 5. peakBackupAddition = totalPeakBackupSize - currentBackupBytes
+     */
+    private long calculatePeakBackupAddition(long currentBackupBytes) {
+        long totalPeakBackupBytes = 0;
+
+        for (BackupDatabasesProperties.DatabaseConfig dbConfig : databaseProperties.getDatabases()) {
+            String databaseName = dbConfig.getDatabaseName();
+
+            // 1. Размер самого свежего бэкапа (DAILY)
+            long latestBackupSize = 0;
+            try {
+                List<String> dailyFiles = backupStorage.list(BackupTier.DAILY, databaseName);
+                if (!dailyFiles.isEmpty()) {
+                    String latestFile = dailyFiles.stream()
+                            .max(Comparator.comparing(fileName -> {
+                                try {
+                                    return backupStorage.getCreationTime(BackupTier.DAILY, databaseName, fileName);
+                                } catch (IOException e) {
+                                    return java.nio.file.attribute.FileTime.fromMillis(0);
+                                }
+                            }))
+                            .orElse(null);
+
+                    if (latestFile != null) {
+                        latestBackupSize = backupStorage.getFileSize(BackupTier.DAILY, databaseName, latestFile);
+                    }
+                }
+            } catch (IOException e) {
+                log.debug("Failed to get latest backup size for {}: {}", databaseName, e.getMessage());
+            }
+
+            if (latestBackupSize == 0) {
+                continue;
+            }
+
+            // 2. Считаем суммарное количество слотов по всем тирам
+            long totalSlots = 0;
+            for (BackupTier tier : BackupTier.values()) {
+                totalSlots += calculateMaxCountForTier(tier);
+            }
+
+            // 3. peakForDb = latestBackupSize × totalSlots
+            long peakForDb = latestBackupSize * totalSlots;
+            totalPeakBackupBytes += peakForDb;
+        }
+
+        // 4. Добавляем 10% погрешности
+        totalPeakBackupBytes = (long) (totalPeakBackupBytes * 1.1);
+
+        // 5. peakBackupAddition = пик - текущее (но не меньше 0)
+        return Math.max(0, totalPeakBackupBytes - currentBackupBytes);
     }
 
     /**
@@ -207,7 +362,9 @@ public class DashboardService {
                 safeTiers.add(new TierInfo(
                         tier.tier(),
                         safeFileCount,
-                        safeSizeBytes
+                        safeSizeBytes,
+                        tier.maxCount(),
+                        tier.retentionPeriod()
                 ));
             }
 
@@ -291,11 +448,17 @@ public class DashboardService {
             }
         }
 
+        // Для safe mode прогноз не показываем (данные обезличены)
         return new StorageInfo(
                 "****", // Скрываем реальный путь
                 safeSizeBytes(usedSpaceBytes),
                 maxSpaceBytes > 0 ? safeSizeBytes(maxSpaceBytes) : 0,
-                Math.round(usagePercent * 100.0) / 100.0
+                Math.round(usagePercent * 100.0) / 100.0,
+                safeSizeBytes(usedSpaceBytes), // peak = current в safe mode
+                0,
+                safeSizeBytes(usedSpaceBytes),
+                usagePercent,
+                StorageStatus.OK
         );
     }
 }
