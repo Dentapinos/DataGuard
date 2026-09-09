@@ -14,7 +14,7 @@
     </parent>
     <groupId>com.dentapinos</groupId>
     <artifactId>DataGuard</artifactId>
-    <version>0.0.1-SNAPSHOT</version>
+    <version>0.0.3-SNAPSHOT</version>
     <name>DataGuard</name>
     <description>DataGuard</description>
     <url/>

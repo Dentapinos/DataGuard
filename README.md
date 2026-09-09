@@ -4,9 +4,9 @@
 
 > **Project**: Data Guard  
 > **Package**: `com.dentapinos.dataguard`  
-> **Version**: 0.0.1-SNAPSHOT  
+> **Version**: 0.0.3-SNAPSHOT  
 > **Author**: Dentapinos  
-> **Last Updated**: 2026-06-23
+> **Last Updated**: 2026-09-09
 
 ---
 
@@ -1142,6 +1142,46 @@ private String password = "password123";
 
 ## 📝 История изменений
 
+### v0.0.3-SNAPSHOT (2026-09-09)
+
+#### 🆕 Dashboard мониторинга бэкапов
+- SPA страница в зелёном стиле с мониторингом всех баз данных
+- Отображение файлов по tier (DAILY/WEEKLY/MONTHLY/SEMI_ANNUAL/ANNUAL)
+- Расписание бэкапа, promotion, retention с парсингом cron
+- Заполненность хранилища с progress bars
+- Защита паролем через Basic Auth
+- Safe Mode — принудительное обезличивание данных (имена БД, размеры, количества)
+- Auto-refresh каждые 30 секунд с таймером
+
+#### 🔄 Promotion и Retention
+- **Promotion**: после копирования файл удаляется из исходной папки
+- **Retention**: удаление по лимиту количества (самые старые), а не по дате
+- **Retention** запускается каждый понедельник 03:30 (было 1-го числа)
+- Параметр `checkStatus` в promote (true только для DAILY→WEEKLY)
+
+#### 🆕 Автозапуск чистки при старте
+- Retention-чистка применяется ко всем тирам и базам при запуске приложения (CommandLineRunner)
+
+#### 🐛 Исправления
+- **Расчёт лимита SEMI_ANNUAL**: убрано неверное умножение на 2, теперь используется `semiAnnualYears` напрямую
+- **Пиковый объём DAILY**: дневной лимит увеличен на +2 для учёта пикового заполнения при ручных бэкапах
+- **Dashboard: реальные данные диска**: исправлено отображение занятого места (`usedSpaceBytes`), теперь показывает реальные данные от ОС через `FileStore`
+- **Отображение cron-расписания**: `extractTimeFromCron` теперь корректно парсит выражения с `/` и `*`
+  - `0/5 * * * * *` → "каждую минуту"
+  - `0 0 1 * * *` → "01:00"
+
+#### 🛡️ Защита от переполнения диска
+- Новый сервис `DiskSpaceChecker` проверяет заполнение перед бэкапами
+- Настраиваемый порог: `backup.disk-full-threshold-percent` (по умолчанию 95%)
+- При заполнении > порога бэкапы автоматически приостанавливаются
+- WARN-лог при каждом пропуске бэкапа и при старте приложения
+- Предупреждение в dashboard с рекомендациями
+
+#### ⚠️ Graceful shutdown
+- `@PreDestroy` в `BackupScheduler` устанавливает флаг shutdown
+- Текущий бэкап завершается, новые не запускаются
+- `spring.lifecycle.timeout-per-shutdown-phase=30s`
+
 ### v0.0.2-SNAPSHOT (2026-07-28)
 - 🐛 **FileSystemBackupStorage.copy()** — исправлен баг: параметр `database` игнорировался, пути строились как `{basePath}/{tier}/{file}` вместо `{basePath}/{database}/{tier}/{file}`
 - 🐛 **BackupTierPromoter.promote()** — исправлен `UnsupportedTemporalTypeException` при использовании `Period.ofMonths()`/`Period.ofYears()` с `Instant.minus()` (переключено на `LocalDate`)
@@ -1159,4 +1199,4 @@ private String password = "password123";
 
 ---
 
-**Последнее обновление**: 2026-07-28
+**Последнее обновление**: 2026-09-09
