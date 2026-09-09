@@ -65,7 +65,7 @@ public class RestoreOrderService {
             return List.of();
         }
 
-        log.info("[RESTORE_ORDER] Таблицы для восстановления: {}", tablesToUse);
+        log.debug("[RESTORE_ORDER] Таблицы для восстановления: {}", tablesToUse);
 
         try {
             // Читаем метаданные
@@ -74,7 +74,7 @@ public class RestoreOrderService {
             // Определяем порядок на основе графа зависимостей
             List<String> restoreOrder = getRestoreOrder(schema, tablesToUse);
             
-            log.info("[RESTORE_ORDER] Определен порядок восстановления: {}", restoreOrder);
+            log.debug("[RESTORE_ORDER] Определен порядок восстановления: {}", restoreOrder);
             return restoreOrder;
         } catch (CircularDependencyException e) {
             log.error("[RESTORE_ORDER] Ошибка при определении порядка восстановления (циклическая зависимость): {}", e.getMessage());
@@ -102,8 +102,8 @@ public class RestoreOrderService {
             return List.of();
         }
 
-        log.info("=== Определение порядка восстановления таблиц ===");
-        log.info("Целевые таблицы для восстановления: {}", tablesToRestore);
+        log.debug("=== Определение порядка восстановления таблиц ===");
+        log.debug("Целевые таблицы для восстановления: {}", tablesToRestore);
         
         // Создаем подмножество таблиц, которые нужно восстановить
         Set<String> targetTables = new HashSet<>(tablesToRestore);
@@ -111,16 +111,16 @@ public class RestoreOrderService {
         // Построение графа зависимостей для целевых таблиц
         Map<String, Set<String>> dependencyGraph = buildDependencyGraph(schema, targetTables);
         
-        log.info("Граф зависимостей:");
+        log.debug("Граф зависимостей:");
         for (Map.Entry<String, Set<String>> entry : dependencyGraph.entrySet()) {
-            log.info("  {} -> {}", entry.getKey(), entry.getValue());
+            log.debug("  {} -> {}", entry.getKey(), entry.getValue());
         }
         
         // Топологическая сортировка
         List<String> order = topologicalSort(dependencyGraph, targetTables);
         
-        log.info("Определенный порядок восстановления: {}", order);
-        log.info("=== Определение порядка завершено ===");
+        log.debug("Определенный порядок восстановления: {}", order);
+        log.debug("=== Определение порядка завершено ===");
         
         return order;
     }
@@ -277,11 +277,11 @@ public class RestoreOrderService {
             List<String> tablesToRestore
     ) {
         if (tablesToRestore == null || tablesToRestore.isEmpty()) {
-            log.info("Список таблиц не указан, читаем все таблицы из БД: {}", targetDatabase);
+            log.debug("Список таблиц не указан, читаем все таблицы из БД: {}", targetDatabase);
             return metadataReader.listTables(dbCredentials, targetDatabase);
         }
         
-        log.info("Получен список таблиц для восстановления: {}", tablesToRestore);
+        log.debug("Получен список таблиц для восстановления: {}", tablesToRestore);
         
         // Получаем список существующих таблиц
         List<String> existingTables = metadataReader.listTables(dbCredentials, targetDatabase);

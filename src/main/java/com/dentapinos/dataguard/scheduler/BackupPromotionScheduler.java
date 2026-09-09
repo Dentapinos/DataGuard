@@ -57,9 +57,10 @@ public class BackupPromotionScheduler {
                         dbName,
                         BackupTier.DAILY,
                         BackupTier.WEEKLY,
-                        Period.ofDays(7)
+                        Period.ofDays(7),
+                        true // проверяем SUCCESS для DAILY → WEEKLY
                 );
-                log.info("[BACKUP_PROMOTION_SCHEDULER] DAILY → WEEKLY успешно завершен для db={}", dbName);
+                log.debug("[BACKUP_PROMOTION_SCHEDULER] DAILY → WEEKLY успешно завершен для db={}", dbName);
                 processed.getAndIncrement();
             } catch (Exception e) {
                 log.error("[BACKUP_PROMOTION_SCHEDULER] Ошибка при promotion DAILY → WEEKLY для db={}", dbName, e);
@@ -91,9 +92,10 @@ public class BackupPromotionScheduler {
                         dbName,
                         BackupTier.WEEKLY,
                         BackupTier.MONTHLY,
-                        Period.ofDays(31)
+                        Period.ofDays(31),
+                        false // статус уже проверен на этапе DAILY→WEEKLY
                 );
-                log.info("[BACKUP_PROMOTION_SCHEDULER] WEEKLY → MONTHLY успешно завершен для db={}", dbName);
+                log.debug("[BACKUP_PROMOTION_SCHEDULER] WEEKLY → MONTHLY успешно завершен для db={}", dbName);
                 processed.getAndIncrement();
             } catch (Exception e) {
                 log.error("[BACKUP_PROMOTION_SCHEDULER] Ошибка при promotion WEEKLY → MONTHLY для db={}", dbName, e);
@@ -121,9 +123,10 @@ public class BackupPromotionScheduler {
                         dbName,
                         BackupTier.MONTHLY,
                         BackupTier.SEMI_ANNUAL,
-                        Period.ofMonths(6)
+                        Period.ofMonths(6),
+                        false // статус уже проверен на этапе DAILY→WEEKLY
                 );
-                log.info("[BACKUP_PROMOTION_SCHEDULER] MONTHLY → SEMI_ANNUAL успешно завершен для db={}", dbName);
+                log.debug("[BACKUP_PROMOTION_SCHEDULER] MONTHLY → SEMI_ANNUAL успешно завершен для db={}", dbName);
                 processed.getAndIncrement();
             } catch (Exception e) {
                 log.error("[BACKUP_PROMOTION_SCHEDULER] Ошибка при promotion MONTHLY → SEMI_ANNUAL для db={}", dbName, e);
@@ -151,9 +154,10 @@ public class BackupPromotionScheduler {
                         dbName,
                         BackupTier.SEMI_ANNUAL,
                         BackupTier.ANNUAL,
-                        Period.ofYears(1)
+                        Period.ofYears(1),
+                        false // статус уже проверен на этапе DAILY→WEEKLY
                 );
-                log.info("[BACKUP_PROMOTION_SCHEDULER] SEMI_ANNUAL → ANNUAL успешно завершен для db={}", dbName);
+                log.debug("[BACKUP_PROMOTION_SCHEDULER] SEMI_ANNUAL → ANNUAL успешно завершен для db={}", dbName);
                 processed.getAndIncrement();
             } catch (Exception e) {
                 log.error("[BACKUP_PROMOTION_SCHEDULER] Ошибка при promotion SEMI_ANNUAL → ANNUAL для db={}", dbName, e);

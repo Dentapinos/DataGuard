@@ -72,7 +72,7 @@ public class BackupDatabasesProperties {
      */
     @PostConstruct
     public void logConfiguration() {
-        log.info("Backup databases configured: {} database(s)", databases.size());
+        log.debug("Backup databases configured: {} database(s)", databases.size());
         databases.forEach(db -> 
             log.debug("  Database: {} (display: {})", "******", db.getDisplayName())
         );

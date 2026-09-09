@@ -1,0 +1,799 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DataGuard Dashboard</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #f1f8e9 0%, #e8f5e9 100%);
+            color: #2e3d2f;
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+
+        header {
+            background: linear-gradient(135deg, #2e7d32 0%, #4caf50 100%);
+            color: white;
+            padding: 30px;
+            border-radius: 12px;
+            margin-bottom: 30px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+
+        header h1 {
+            font-size: 2.5em;
+            margin-bottom: 10px;
+        }
+
+        header p {
+            font-size: 1.1em;
+            opacity: 0.9;
+        }
+
+        .refresh-indicator {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background: rgba(46, 125, 50, 0.9);
+            color: white;
+            padding: 10px 20px;
+            border-radius: 20px;
+            font-size: 0.9em;
+            z-index: 1000;
+        }
+
+        .safe-mode-badge {
+            background: rgba(255, 152, 0, 0.2);
+            color: #e65100;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            text-align: center;
+            font-weight: 600;
+            border-left: 5px solid #ff9800;
+        }
+
+        .section {
+            background: white;
+            padding: 25px;
+            border-radius: 12px;
+            margin-bottom: 30px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+        }
+
+        .section h2 {
+            color: #2e7d32;
+            font-size: 1.8em;
+            margin-bottom: 20px;
+            padding-bottom: 10px;
+            border-bottom: 3px solid #4caf50;
+        }
+
+        .schedule-table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        .schedule-table th,
+        .schedule-table td {
+            padding: 15px;
+            text-align: left;
+            border-bottom: 1px solid #e0e0e0;
+        }
+
+        .schedule-table th {
+            background: linear-gradient(135deg, #4caf50 0%, #66bb6a 100%);
+            color: white;
+            font-weight: 600;
+        }
+
+        .schedule-table tr:hover {
+            background-color: #f1f8e9;
+        }
+
+        .schedule-table td {
+            font-size: 1.05em;
+        }
+
+        .storage-info {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+        }
+
+        .storage-card {
+            background: linear-gradient(135deg, #f1f8e9 0%, #e8f5e9 100%);
+            padding: 20px;
+            border-radius: 10px;
+            border-left: 5px solid #4caf50;
+        }
+
+        .storage-card h3 {
+            color: #2e7d32;
+            margin-bottom: 10px;
+            font-size: 1.2em;
+        }
+
+        .storage-card p {
+            margin: 5px 0;
+            font-size: 1em;
+        }
+
+        .progress-bar-container {
+            width: 100%;
+            height: 24px;
+            background: #e0e0e0;
+            border-radius: 12px;
+            overflow: hidden;
+            margin-top: 10px;
+        }
+
+        .progress-bar {
+            height: 100%;
+            background: linear-gradient(90deg, #4caf50 0%, #66bb6a 100%);
+            transition: width 0.3s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-weight: 600;
+            font-size: 0.85em;
+        }
+
+        .progress-bar.warning {
+            background: linear-gradient(90deg, #ff9800 0%, #ffb74d 100%);
+        }
+
+        .progress-bar.danger {
+            background: linear-gradient(90deg, #f44336 0%, #ef5350 100%);
+        }
+
+        .databases-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(600px, 1fr));
+            gap: 25px;
+        }
+
+        .database-card {
+            background: white;
+            border: 2px solid #c8e6c9;
+            border-radius: 12px;
+            padding: 25px;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+
+        .database-card:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 6px 16px rgba(0, 0, 0, 0.12);
+        }
+
+        .database-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            padding-bottom: 15px;
+            border-bottom: 2px solid #4caf50;
+        }
+
+        .database-name {
+            font-size: 1.6em;
+            color: #2e7d32;
+            font-weight: 700;
+        }
+
+        .database-display-name {
+            font-size: 1em;
+            color: #666;
+            margin-top: 5px;
+        }
+
+        .database-stats {
+            display: flex;
+            gap: 20px;
+        }
+
+        .stat-item {
+            text-align: center;
+            padding: 10px 15px;
+            background: #f1f8e9;
+            border-radius: 8px;
+        }
+
+        .stat-value {
+            font-size: 1.5em;
+            font-weight: 700;
+            color: #2e7d32;
+        }
+
+        .stat-label {
+            font-size: 0.85em;
+            color: #666;
+            margin-top: 3px;
+        }
+
+        .tier-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 15px;
+        }
+
+        .tier-table th,
+        .tier-table td {
+            padding: 12px;
+            text-align: left;
+            border-bottom: 1px solid #e0e0e0;
+        }
+
+        .tier-table th {
+            background: #e8f5e9;
+            color: #2e7d32;
+            font-weight: 600;
+        }
+
+        .tier-table tr:last-child td {
+            border-bottom: none;
+        }
+
+        .tier-badge {
+            display: inline-block;
+            padding: 4px 12px;
+            background: linear-gradient(135deg, #4caf50 0%, #66bb6a 100%);
+            color: white;
+            border-radius: 15px;
+            font-size: 0.85em;
+            font-weight: 600;
+        }
+
+        .tier-usage-bar-container {
+            width: 100%;
+            height: 28px;
+            background: #e0e0e0;
+            border-radius: 14px;
+            overflow: hidden;
+            position: relative;
+            display: flex;
+            align-items: center;
+        }
+
+        .tier-usage-bar {
+            height: 100%;
+            background: linear-gradient(90deg, #4caf50 0%, #66bb6a 100%);
+            border-radius: 14px;
+            transition: width 0.3s ease;
+            min-width: 2px;
+        }
+
+        .tier-usage-text {
+            position: absolute;
+            left: 50%;
+            transform: translateX(-50%);
+            font-size: 0.8em;
+            font-weight: 600;
+            color: #2e7d32;
+            white-space: nowrap;
+            z-index: 1;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 50px;
+            font-size: 1.2em;
+            color: #2e7d32;
+        }
+
+        .loading::after {
+            content: '...';
+            animation: dots 1.5s infinite;
+        }
+
+        @keyframes dots {
+            0%, 20% { content: '.'; }
+            40% { content: '..'; }
+            60%, 100% { content: '...'; }
+        }
+
+        .error {
+            background: #ffebee;
+            color: #c62828;
+            padding: 20px;
+            border-radius: 8px;
+            border-left: 5px solid #f44336;
+            margin: 20px 0;
+        }
+
+        .last-update {
+            text-align: center;
+            margin-top: 30px;
+            color: #666;
+            font-size: 0.9em;
+        }
+
+        /* Login Form Styles */
+        .login-container {
+            max-width: 400px;
+            margin: 50px auto;
+            background: white;
+            padding: 40px;
+            border-radius: 12px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+        }
+
+        .login-container h2 {
+            color: #2e7d32;
+            margin-bottom: 10px;
+            text-align: center;
+            font-size: 1.8em;
+        }
+
+        .login-container p {
+            text-align: center;
+            color: #666;
+            margin-bottom: 30px;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 8px;
+            color: #2e7d32;
+            font-weight: 600;
+        }
+
+        .form-group input {
+            width: 100%;
+            padding: 12px 15px;
+            border: 2px solid #c8e6c9;
+            border-radius: 8px;
+            font-size: 1em;
+            transition: border-color 0.3s;
+        }
+
+        .form-group input:focus {
+            outline: none;
+            border-color: #4caf50;
+        }
+
+        .login-btn {
+            width: 100%;
+            padding: 14px;
+            background: linear-gradient(135deg, #2e7d32 0%, #4caf50 100%);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 1.1em;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+
+        .login-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(46, 125, 50, 0.3);
+        }
+
+        .login-btn:active {
+            transform: translateY(0);
+        }
+
+        .login-error {
+            background: #ffebee;
+            color: #c62828;
+            padding: 12px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            text-align: center;
+            display: none;
+        }
+
+        @media (max-width: 768px) {
+            .databases-grid {
+                grid-template-columns: 1fr;
+            }
+
+            header h1 {
+                font-size: 1.8em;
+            }
+
+            .schedule-table th,
+            .schedule-table td {
+                padding: 10px;
+                font-size: 0.95em;
+            }
+
+            .login-container {
+                margin: 30px 20px;
+                padding: 30px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🛡️ BackupService Dashboard</h1>
+            <p>Мониторинг резервных копий баз данных</p>
+        </header>
+
+        <div class="refresh-indicator" id="refreshIndicator" style="display: none;">
+            Обновление через: <span id="countdown">30</span>с
+        </div>
+
+        <div id="content">
+            <div class="loading">Проверка авторизации...</div>
+        </div>
+
+        <div class="last-update" id="lastUpdate"></div>
+    </div>
+
+    <script>
+        const API_URL = '/api/dashboard';
+        const REFRESH_INTERVAL = 5; // seconds
+        const AUTH_KEY = 'dashboard_auth';
+
+        let countdownValue = REFRESH_INTERVAL;
+        let refreshTimer;
+
+        // Check if user is authenticated
+        function isAuthenticated() {
+            return sessionStorage.getItem(AUTH_KEY) !== null;
+        }
+
+        // Get stored credentials
+        function getAuthCredentials() {
+            return sessionStorage.getItem(AUTH_KEY);
+        }
+
+        // Store credentials
+        function storeAuthCredentials(username, password) {
+            const credentials = btoa(`${username}:${password}`);
+            sessionStorage.setItem(AUTH_KEY, credentials);
+        }
+
+        // Clear credentials
+        function clearAuthCredentials() {
+            sessionStorage.removeItem(AUTH_KEY);
+        }
+
+        // Show login form
+        function showLoginForm(errorMessage = '') {
+            document.getElementById('refreshIndicator').style.display = 'none';
+            
+            let errorHtml = '';
+            if (errorMessage) {
+                errorHtml = `<div class="login-error" style="display: block;">${errorMessage}</div>`;
+            }
+
+            document.getElementById('content').innerHTML = `
+                <div class="login-container">
+                    <h2>🔐 Вход</h2>
+                    <p>Введите логин и пароль для доступа к dashboard</p>
+                    ${errorHtml}
+                    <form id="loginForm">
+                        <div class="form-group">
+                            <label for="username">Логин</label>
+                            <input type="text" id="username" name="username" required autocomplete="username" autofocus>
+                        </div>
+                        <div class="form-group">
+                            <label for="password">Пароль</label>
+                            <input type="password" id="password" name="password" required autocomplete="current-password">
+                        </div>
+                        <button type="submit" class="login-btn">Войти</button>
+                    </form>
+                </div>
+            `;
+
+            // Handle form submission
+            document.getElementById('loginForm').addEventListener('submit', function(e) {
+                e.preventDefault();
+                const username = document.getElementById('username').value;
+                const password = document.getElementById('password').value;
+                handleLogin(username, password);
+            });
+        }
+
+        // Handle login
+        async function handleLogin(username, password) {
+            try {
+                const response = await fetch(API_URL, {
+                    method: 'GET',
+                    headers: {
+                        'Authorization': 'Basic ' + btoa(`${username}:${password}`)
+                    }
+                });
+
+                if (response.ok) {
+                    storeAuthCredentials(username, password);
+                    fetchDashboardData();
+                    startCountdown();
+                } else {
+                    const errorText = await response.text();
+                    showLoginForm('Неверный логин или пароль');
+                }
+            } catch (error) {
+                console.error('Login error:', error);
+                showLoginForm('Ошибка подключения к серверу');
+            }
+        }
+
+        // Fetch dashboard data with auth
+        async function fetchDashboardData() {
+            try {
+                const credentials = getAuthCredentials();
+                const response = await fetch(API_URL, {
+                    method: 'GET',
+                    headers: {
+                        'Authorization': 'Basic ' + credentials
+                    }
+                });
+
+                if (!response.ok) {
+                    if (response.status === 401) {
+                        clearAuthCredentials();
+                        showLoginForm('Сессия истекла. Войдите снова.');
+                    }
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+
+                const data = await response.json();
+                renderDashboard(data);
+                resetCountdown();
+            } catch (error) {
+                console.error('Error fetching dashboard data:', error);
+                document.getElementById('content').innerHTML = `
+                    <div class="error">
+                        <strong>Ошибка загрузки данных:</strong> ${error.message}
+                        <br><br>
+                        Убедитесь, что сервер запущен и доступен по адресу: ${API_URL}
+                    </div>
+                `;
+            }
+        }
+
+        function resetCountdown() {
+            countdownValue = REFRESH_INTERVAL;
+            document.getElementById('countdown').textContent = countdownValue;
+        }
+
+        function startCountdown() {
+            document.getElementById('refreshIndicator').style.display = 'block';
+            clearInterval(refreshTimer);
+            refreshTimer = setInterval(() => {
+                countdownValue--;
+                if (countdownValue <= 0) {
+                    fetchDashboardData();
+                } else {
+                    document.getElementById('countdown').textContent = countdownValue;
+                }
+            }, 1000);
+        }
+
+        function formatFileSize(bytes) {
+            if (bytes === 0) return '0 B';
+            const k = 1024;
+            const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+        }
+
+        function getUsageClass(percent) {
+            if (percent >= 90) return 'danger';
+            if (percent >= 70) return 'warning';
+            return '';
+        }
+
+        function getDaysWord(days) {
+            const absDays = Math.abs(days);
+            const lastDigit = absDays % 10;
+            const lastTwoDigits = absDays % 100;
+
+            if (lastTwoDigits >= 11 && lastTwoDigits <= 19) return 'дней';
+            if (lastDigit === 1) return 'день';
+            if (lastDigit >= 2 && lastDigit <= 4) return 'дня';
+            return 'дней';
+        }
+
+        function renderDashboard(data) {
+            const { databases, schedule, storage, safeMode, backupPaused } = data;
+
+            let html = '';
+
+            // Safe Mode Badge (только когда включён)
+            if (safeMode) {
+                html += `
+                    <div class="safe-mode-badge">
+                        ⚠️ БЕЗОПАСНЫЙ РЕЖИМ: Данные обезличены. Имена баз, точные размеры и количества файлов скрыты.
+                    </div>
+                `;
+            }
+
+            // Backup Paused Warning (только когда бэкапы приостановлены)
+            if (backupPaused) {
+                html += `
+                    <div class="safe-mode-badge" style="background: #ffebee; color: #c62828; border-left-color: #f44336;">
+                        🚨 ВНИМАНИЕ: Бэкапы приостановлены — диск заполнен.<br>
+                        <strong>Причины:</strong> свободное место на диске критически мало.<br>
+                        <strong>Рекомендации:</strong><br>
+                        1. Увеличьте размер диска или очистите старые бэкапы вручную.<br>
+                        2. Настройте более агрессивную политику хранения (retention) в application.properties.<br>
+                        3. Переместите хранилище бэкапов на диск с большим объёмом.<br>
+                        <em>Бэкапы будут возобновлены автоматически после освобождения места.</em>
+                    </div>
+                `;
+            }
+
+            // Schedule Section
+            html += `
+                <div class="section">
+                    <h2>📅 Расписание</h2>
+                    <table class="schedule-table">
+                        <thead>
+                            <tr>
+                                <th>Операция</th>
+                                <th>Время</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td><strong>Создание бэкапа</strong></td>
+                                <td>${schedule.backupTime}</td>
+                            </tr>
+                            <tr>
+                                <td><strong>Перемещение (promotion)</strong></td>
+                                <td>${schedule.promotionTime}</td>
+                            </tr>
+                            <tr>
+                                <td><strong>Удаление (retention)</strong></td>
+                                <td>${schedule.retentionTime}</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            `;
+
+            // Storage Section
+            const statusColors = {
+                'OK': { color: '#4caf50', bg: '#e8f5e9', label: '✅ Норма' },
+                'WARNING': { color: '#ff9800', bg: '#fff3e0', label: '⚠️ Внимание' },
+                'CRITICAL': { color: '#f44336', bg: '#ffebee', label: '🚨 Критическое состояние' }
+            };
+            const statusInfo = statusColors[storage.status] || statusColors['OK'];
+
+            html += `
+                <div class="section">
+                    <h2>💾 Хранилище</h2>
+                    <div class="storage-info">
+                        <div class="storage-card">
+                            <h3>Общий размер диска</h3>
+                            <p>${formatFileSize(storage.maxSpaceBytes)}</p>
+                        </div>
+                        <div class="storage-card">
+                            <h3>Сейчас занято</h3>
+                            <p>${formatFileSize(storage.usedSpaceBytes)} (${storage.usagePercent.toFixed(1)}%)</p>
+                        </div>
+                        <div class="storage-card">
+                            <h3>Занимают бекапы</h3>
+                            <p>${formatFileSize(storage.currentBackupBytes)}</p>
+                        </div>
+                    </div>
+
+                    <div class="storage-info" style="margin-top: 20px;">
+                        <div class="storage-card" style="border-left-color: ${statusInfo.color}; background: ${statusInfo.bg};">
+                            <h3 style="color: ${statusInfo.color};">${statusInfo.label}</h3>
+                            <p style="font-size: 1.3em; font-weight: 600;">
+                                В пике будет занято: ${formatFileSize(storage.peakTotalBytes)} (${storage.peakTotalPercent.toFixed(1)}% от диска)
+                            </p>
+                            <p style="color: #666; margin-top: 8px;">
+                                сейчас: ${formatFileSize(storage.usedSpaceBytes)} + бэкапы в пике: +${formatFileSize(storage.peakBackupAdditionBytes)} (с учётом 10% погрешности)
+                            </p>
+                            <p style="color: #666; margin-top: 8px;">
+                                Ели в пике будет занято более 90% диска, желательно предпринять действия по увеличению размера дискового пространства
+                            </p>
+                        </div>
+                    </div>
+                </div>
+            `;
+
+            // Databases Section
+            html += `
+                <div class="section">
+                    <h2>🗄️ Базы данных</h2>
+                    <div class="databases-grid">
+            `;
+
+            databases.forEach(db => {
+                html += `
+                    <div class="database-card">
+                        <div class="database-header">
+                            <div>
+                                <div class="database-name">${db.displayName}</div>
+                            </div>
+                            <div class="database-stats">
+                                <div class="stat-item">
+                                    <div class="stat-value">${db.totalFileCount}</div>
+                                    <div class="stat-label">Файлов</div>
+                                </div>
+                                <div class="stat-item">
+                                    <div class="stat-value">${formatFileSize(db.totalSizeBytes)}</div>
+                                    <div class="stat-label">Размер</div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <table class="tier-table">
+                            <thead>
+                                <tr>
+                                    <th>Уровень</th>
+                                    <th>Файлов</th>
+                                    <th>Размер</th>
+                                    <th>% от общезанятого</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                `;
+
+                db.tiers.forEach(tier => {
+                    const sharePercent = db.totalSizeBytes > 0 
+                        ? (tier.totalSizeBytes * 100) / db.totalSizeBytes 
+                        : 0;
+
+                    html += `
+                        <tr>
+                            <td><span class="tier-badge">${tier.tier}</span></td>
+                            <td><strong>${tier.fileCount}</strong></td>
+                            <td>${formatFileSize(tier.totalSizeBytes)}</td>
+                            <td>
+                                <div class="tier-usage-bar-container">
+                                    <div class="tier-usage-bar" 
+                                         style="width: ${sharePercent}%">
+                                    </div>
+                                    <span class="tier-usage-text">${sharePercent.toFixed(1)}%</span>
+                                </div>
+                            </td>
+                        </tr>
+                    `;
+                });
+
+                html += `
+                            </tbody>
+                        </table>
+                    </div>
+                `;
+            });
+
+            html += `
+                    </div>
+                </div>
+            `;
+
+            document.getElementById('content').innerHTML = html;
+            document.getElementById('lastUpdate').textContent = 
+                `Последнее обновление: ${new Date().toLocaleString('ru-RU')}`;
+        }
+
+        // Initialize
+        if (isAuthenticated()) {
+            fetchDashboardData();
+            startCountdown();
+        } else {
+            showLoginForm();
+        }
+    </script>
+</body>
+</html>

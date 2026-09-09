@@ -40,26 +40,32 @@ public class BackupTierPromoter {
 
 
     /**
-     * Находит в {@code fromTier} самый новый успешный бэкап за указанный период и копирует его в {@code toTier}.
-     * Если подходящих бэкапов нет, просто пишет предупреждение в лог.
+     * Находит в {@code fromTier} самый новый бэкап за указанный период,
+     * копирует его в {@code toTier} и удаляет из исходного tier.
+     * <p>
+     * Если {@code checkStatus} == true, проверяет report.json на SUCCESS
+     * (используется для DAILY → WEEKLY). Для последующих promotion статус
+     * не проверяется — файл считается проверенным.
      *
-     * @param database имя базы данных
-     * @param fromTier исходный уровень хранения (откуда брать бэкап)
-     * @param toTier   целевой уровень хранения (куда копировать)
-     * @param period   максимальная «давность» бэкапа (например, {@code Period.ofDays(1)})
+     * @param database     имя базы данных
+     * @param fromTier     исходный уровень хранения (откуда брать бэкап)
+     * @param toTier       целевой уровень хранения (куда копировать)
+     * @param period       максимальная «давность» бэкапа
+     * @param checkStatus  true — проверить SUCCESS по report.json (только для DAILY→WEEKLY)
      */
-    public void promote(String database, BackupTier fromTier, BackupTier toTier, Period period) {
+    public void promote(String database, BackupTier fromTier, BackupTier toTier, Period period, boolean checkStatus) {
         try {
             LocalDate now = LocalDate.now(ZoneId.of("UTC"));
             LocalDate fromLocalDate = now.minus(period);
 
-            log.info("[BACKUP_PROMOTION] Запуск promotion: from={} to={} period={}", fromTier, toTier, period);
+            log.debug("[BACKUP_PROMOTION] Запуск promotion: from={} to={} period={} checkStatus={}",
+                    fromTier, toTier, period, checkStatus);
 
             var files = backupStorage.list(fromTier, database);
 
             Optional<String> candidate = files.stream()
-                    // 1. только успешные бэкапы
-                    .filter(fileName -> isSuccessful(fileName, fromTier, database))
+                    // 1. проверка статуса (только для DAILY → WEEKLY)
+                    .filter(fileName -> !checkStatus || isSuccessful(fileName, fromTier, database))
                     // 2. только в окне [fromLocalDate, now]
                     .filter(fileName -> {
                         try {
@@ -89,19 +95,34 @@ public class BackupTierPromoter {
                     }));
 
             if (candidate.isEmpty()) {
-                log.warn("[BACKUP_PROMOTION] Нет подходящих SUCCESSFUL бэкапов для promotion из {} в {} за период {}",
+                log.warn("[BACKUP_PROMOTION] Нет подходящих бэкапов для promotion из {} в {} за период {}",
                         fromTier, toTier, period);
                 return;
             }
 
-            // Копируем файл (FileSystemBackupStorage.copy атомарно перезапишет, если существует)
-            backupStorage.copy(candidate.get(), fromTier, toTier, database);
-            log.info("[BACKUP_PROMOTION] Успешный promotion бэкапа {} из {} в {}", candidate.get(), fromTier, toTier);
+            String fileName = candidate.get();
+
+            // Копируем файл
+            backupStorage.copy(fileName, fromTier, toTier, database);
+            log.info("[BACKUP_PROMOTION] Успешно скопирован бэкап {} из {} в {}",
+                    fileName, fromTier, toTier);
+
+            // Удаляем исходный файл (copy → delete)
+            backupStorage.delete(fromTier, database, fileName);
+            log.info("[BACKUP_PROMOTION] Удалён исходный бэкап {} из {} после успешного promotion",
+                    fileName, fromTier);
 
         } catch (Exception e) {
             log.error("[BACKUP_PROMOTION] Необработанная ошибка promotion из {} в {}", fromTier, toTier, e);
             throw new BackupStorageException("Failed to promote backup from " + fromTier + " to " + toTier, e);
         }
+    }
+
+    /**
+     * Обёртка для обратной совместимости: promotion с проверкой статуса.
+     */
+    public void promote(String database, BackupTier fromTier, BackupTier toTier, Period period) {
+        promote(database, fromTier, toTier, period, true);
     }
 
     /**

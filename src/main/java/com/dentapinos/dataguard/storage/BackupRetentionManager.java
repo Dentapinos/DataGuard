@@ -10,8 +10,8 @@ import org.springframework.stereotype.Service;
 
 import java.io.IOException;
 import java.time.Instant;
-import java.time.LocalDate;
 import java.time.ZoneOffset;
+import java.util.Comparator;
 import java.util.List;
 
 /**
@@ -30,7 +30,8 @@ public class BackupRetentionManager {
 
     /**
      * Применяет политику хранения к указанному уровню:
-     * удаляет все бэкапы, созданные ранее расчётной граничной даты.
+     * оставляет только N newest бэкапов (N = лимит из настроек),
+     * удаляет самые старые, выходящие за лимит.
      *
      * @param tier уровень хранения, к которому нужно применить retention
      */
@@ -40,40 +41,40 @@ public class BackupRetentionManager {
             return;
         }
         try {
-            LocalDate now = LocalDate.now(ZoneOffset.UTC);
-            LocalDate cutoffDate = calculateCutoffDateForTier(tier, now);
-            if (cutoffDate == null) {
-                log.debug("[BACKUP_RETENTION] для уровня {} полика хранения не задана, удаление не выполняется", tier);
+            int maxCount = calculateMaxCountForTier(tier);
+            List<String> allFiles = backupStorage.list(tier, database);
+
+            if (allFiles.size() <= maxCount) {
+                log.debug("[BACKUP_RETENTION] уровень={} файлов {} <= лимит {}, удаление не требуется", tier, allFiles.size(), maxCount);
                 return;
             }
 
-            Instant cutoffInstant = cutoffDate.atStartOfDay().toInstant(ZoneOffset.UTC);
-
-            log.debug("[BACKUP_RETENTION] уровень={} граничная дата удаления={}", tier, cutoffDate);
-
-            List<String> filesToDelete = backupStorage.list(tier, database).stream()
-                    .filter(fileName -> {
+            // Сортируем: новые первыми
+            List<String> sortedFiles = allFiles.stream()
+                    .sorted(Comparator.comparing((String fileName) -> {
                         try {
-                            Instant created = backupStorage
+                            return backupStorage
                                     .getCreationTime(tier, database, fileName)
                                     .toInstant();
-                            return !created.isAfter(cutoffInstant);
                         } catch (IOException e) {
-                            log.warn("[BACKUP_RETENTION] не удалось обработать резервную копию: уровень={} файл={}",
-                                    tier, fileName, e);
-                            return false;
+                            log.warn("[BACKUP_RETENTION] не удалось получить время создания файла {} (tier={}): {}",
+                                    fileName, tier, e.getMessage(), e);
+                            return Instant.EPOCH;
                         }
-                    })
+                    }).reversed())
                     .toList();
 
-            log.info("[BACKUP_RETENTION] найдено {} файлов для удаления на уровне {}", filesToDelete.size(), tier);
+            // Удаляем самые старые (выходящие за лимит)
+            int filesToDelete = sortedFiles.size() - maxCount;
+            log.info("[BACKUP_RETENTION] уровень={} всего={} лимит={} будет удалено={}", tier, sortedFiles.size(), maxCount, filesToDelete);
 
-            for (String fileName : filesToDelete) {
+            for (int i = maxCount; i < sortedFiles.size(); i++) {
+                String fileName = sortedFiles.get(i);
                 try {
                     backupStorage.delete(tier, database, fileName);
                     log.info("[BACKUP_RETENTION] удалена старая резервная копия: уровень={} файл={}", tier, fileName);
                 } catch (IOException e) {
-                    log.warn("[BACKUP_RETENTION] не удалось удалить резервную копию: уровень={} файл={}",
+                    log.error("[BACKUP_RETENTION] не удалось удалить резервную копию: уровень={} файл={}",
                             tier, fileName, e);
                 }
             }
@@ -85,24 +86,22 @@ public class BackupRetentionManager {
     }
 
     /**
-     * Рассчитывает граничную дату для удаления бэкапов для заданного уровня,
+     * Рассчитывает максимальное количество бэкапов для заданного уровня,
      * используя настройки из {@link BackupRetentionProperties}.
      *
      * @param tier уровень хранения
-     * @param now  «текущая» дата (для удобства тестирования передаётся параметром)
-     * @return дата, раньше которой бэкапы считаются устаревшими
+     * @return максимальное количество файлов, которые должны храниться
      */
-    private LocalDate calculateCutoffDateForTier(BackupTier tier, LocalDate now) {
+    private int calculateMaxCountForTier(BackupTier tier) {
         return switch (tier) {
-            case DAILY      -> now.minusDays(backupRetentionProperties.getDailyDays());
-            case WEEKLY     -> now.minusWeeks(backupRetentionProperties.getWeeklyWeeks());
-            case MONTHLY    -> now.minusMonths(backupRetentionProperties.getMonthlyMonths());
-            case SEMI_ANNUAL ->
-                    now.minusMonths(backupRetentionProperties.getSemiAnnualYears() * 6L);
-            case ANNUAL     -> now.minusYears(backupRetentionProperties.getAnnualYears());
+            case DAILY      -> backupRetentionProperties.getDailyDays();
+            case WEEKLY     -> backupRetentionProperties.getWeeklyWeeks();
+            case MONTHLY    -> backupRetentionProperties.getMonthlyMonths();
+            case SEMI_ANNUAL -> backupRetentionProperties.getSemiAnnualYears();
+            case ANNUAL     -> backupRetentionProperties.getAnnualYears();
             default         -> {
                 log.warn("[BACKUP_RETENTION] неизвестный уровень хранения: {}", tier);
-                yield null;
+                yield 0;
             }
         };
     }

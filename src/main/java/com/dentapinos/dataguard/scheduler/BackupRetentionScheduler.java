@@ -58,7 +58,7 @@ public class BackupRetentionScheduler {
                         databaseName, tier);
                 try {
                     backupRetentionManager.applyRetention(tier, databaseName);
-                    log.info("[BACKUP_RETENTION_SCHEDULER] политика хранения успешно применена: db={}, tier={}",
+                    log.debug("[BACKUP_RETENTION_SCHEDULER] политика хранения успешно применена: db={}, tier={}",
                             databaseName, tier);
                     successOps.getAndIncrement();
                 } catch (Exception e) {

@@ -3,6 +3,8 @@ package com.dentapinos.dataguard.scheduler;
 import com.dentapinos.dataguard.config.BackupDatabasesProperties;
 import com.dentapinos.dataguard.dto.DbCredentials;
 import com.dentapinos.dataguard.service.BackupFacade;
+import com.dentapinos.dataguard.storage.DiskSpaceChecker;
+import jakarta.annotation.PreDestroy;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -10,6 +12,7 @@ import org.springframework.stereotype.Component;
 
 import java.io.IOException;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * Планировщик регулярного бэкапа всех баз, перечисленных в backup.databases.
@@ -26,6 +29,9 @@ public class BackupScheduler {
 
     private final BackupFacade backupFacade;
     private final BackupDatabasesProperties backupDatabasesProperties;
+    private final DiskSpaceChecker diskSpaceChecker;
+
+    private final AtomicBoolean isShuttingDown = new AtomicBoolean(false);
 
     /**
      * Ежедневный запуск бэкапа для всех баз.
@@ -36,6 +42,17 @@ public class BackupScheduler {
     @Scheduled(cron = "#{@backupScheduleProperties.dailyBackupCron}",
             zone = "#{@backupScheduleProperties.zoneId}")
     public void runBackup() {
+        if (isShuttingDown.get()) {
+            log.info("[BACKUP_PIPELINE] Приложение останавливается, бэкап пропущен");
+            return;
+        }
+
+        if (diskSpaceChecker.isDiskFull()) {
+            log.warn("[BACKUP_PIPELINE] ⚠️ ПРЕДУПРЕЖДЕНИЕ: бэкапы приостановлены — диск заполнен. " +
+                    "Необходимо увеличить место хранения или очистить старые бэкапы.");
+            return;
+        }
+
         log.info("[BACKUP_PIPELINE] === Начало ежедневного бэкапа для всех баз ===");
         AtomicInteger total = new AtomicInteger();
         AtomicInteger success = new AtomicInteger();
@@ -53,7 +70,7 @@ public class BackupScheduler {
             total.getAndIncrement();
             try {
                 String backupName = backupFacade.backupAndStore(dbName, credentials);
-                log.info("[BACKUP_PIPELINE] Бэкап для db={} успешно завершён, файл={}", dbName, backupName);
+                log.debug("[BACKUP_PIPELINE] Бэкап для db={} успешно завершён, файл={}", dbName, backupName);
                 success.getAndIncrement();
             } catch (IOException e) {
                 log.error("[BACKUP_PIPELINE] Ошибка ввода-вывода при бэкапе db={}", dbName, e);
@@ -66,5 +83,15 @@ public class BackupScheduler {
 
         log.info("[BACKUP_PIPELINE] === Завершение ежедневного бэкапа для всех баз ===");
         log.info("[BACKUP_PIPELINE] Всего: {}, успешно: {}, ошибок: {}", total, success, failed);
+    }
+
+    /**
+     * Вызывается при остановке приложения.
+     * Устанавливает флаг shutdown, чтобы текущий бэкап завершился корректно.
+     */
+    @PreDestroy
+    public void onShutdown() {
+        log.info("[BACKUP_PIPELINE] === Приложение останавливается, завершение текущих операций ===");
+        isShuttingDown.set(true);
     }
 }
