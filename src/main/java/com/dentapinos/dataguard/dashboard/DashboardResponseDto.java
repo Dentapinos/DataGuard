@@ -9,5 +9,6 @@ public record DashboardResponseDto(
     List<DatabaseDashboardDto> databases,
     ScheduleInfo schedule,
     StorageInfo storage,
-    boolean safeMode
+    boolean safeMode,
+    boolean backupPaused
 ) {}

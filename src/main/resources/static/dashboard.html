@@ -610,7 +610,7 @@
         }
 
         function renderDashboard(data) {
-            const { databases, schedule, storage, safeMode } = data;
+            const { databases, schedule, storage, safeMode, backupPaused } = data;
 
             let html = '';
 
@@ -619,6 +619,21 @@
                 html += `
                     <div class="safe-mode-badge">
                         ⚠️ БЕЗОПАСНЫЙ РЕЖИМ: Данные обезличены. Имена баз, точные размеры и количества файлов скрыты.
+                    </div>
+                `;
+            }
+
+            // Backup Paused Warning (только когда бэкапы приостановлены)
+            if (backupPaused) {
+                html += `
+                    <div class="safe-mode-badge" style="background: #ffebee; color: #c62828; border-left-color: #f44336;">
+                        🚨 ВНИМАНИЕ: Бэкапы приостановлены — диск заполнен.<br>
+                        <strong>Причины:</strong> свободное место на диске критически мало.<br>
+                        <strong>Рекомендации:</strong><br>
+                        1. Увеличьте размер диска или очистите старые бэкапы вручную.<br>
+                        2. Настройте более агрессивную политику хранения (retention) в application.properties.<br>
+                        3. Переместите хранилище бэкапов на диск с большим объёмом.<br>
+                        <em>Бэкапы будут возобновлены автоматически после освобождения места.</em>
                     </div>
                 `;
             }
@@ -673,7 +688,7 @@
                             <p>${formatFileSize(storage.usedSpaceBytes)} (${storage.usagePercent.toFixed(1)}%)</p>
                         </div>
                         <div class="storage-card">
-                            <h3>Бэкапы сейчас</h3>
+                            <h3>Занимают бекапы</h3>
                             <p>${formatFileSize(storage.currentBackupBytes)}</p>
                         </div>
                     </div>
@@ -686,6 +701,9 @@
                             </p>
                             <p style="color: #666; margin-top: 8px;">
                                 сейчас: ${formatFileSize(storage.usedSpaceBytes)} + бэкапы в пике: +${formatFileSize(storage.peakBackupAdditionBytes)} (с учётом 10% погрешности)
+                            </p>
+                            <p style="color: #666; margin-top: 8px;">
+                                Ели в пике будет занято более 90% диска, желательно предпринять действия по увеличению размера дискового пространства
                             </p>
                         </div>
                     </div>
@@ -724,7 +742,7 @@
                                     <th>Уровень</th>
                                     <th>Файлов</th>
                                     <th>Размер</th>
-                                    <th>Доля от хранилища</th>
+                                    <th>% от общезанятого</th>
                                 </tr>
                             </thead>
                             <tbody>

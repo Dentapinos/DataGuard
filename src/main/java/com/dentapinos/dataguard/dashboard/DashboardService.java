@@ -6,6 +6,7 @@ import com.dentapinos.dataguard.config.BackupRetentionProperties;
 import com.dentapinos.dataguard.config.BackupScheduleProperties;
 import com.dentapinos.dataguard.enums.BackupTier;
 import com.dentapinos.dataguard.storage.BackupStorage;
+import com.dentapinos.dataguard.storage.DiskSpaceChecker;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -31,6 +32,7 @@ public class DashboardService {
     private final BackupScheduleProperties scheduleProperties;
     private final BackupProperties backupProperties;
     private final BackupRetentionProperties retentionProperties;
+    private final DiskSpaceChecker diskSpaceChecker;
 
     /**
      * Получает полные данные для dashboard.
@@ -57,8 +59,9 @@ public class DashboardService {
 
         ScheduleInfo scheduleInfo = getScheduleInfo();
         StorageInfo storageInfo = getStorageInfo();
+        boolean backupPaused = diskSpaceChecker.isDiskFull();
 
-        return new DashboardResponseDto(databases, scheduleInfo, storageInfo, false);
+        return new DashboardResponseDto(databases, scheduleInfo, storageInfo, false, backupPaused);
     }
 
     /**
@@ -102,10 +105,10 @@ public class DashboardService {
      */
     private long calculateMaxCountForTier(BackupTier tier) {
         return switch (tier) {
-            case DAILY -> retentionProperties.getDailyDays();
+            case DAILY -> retentionProperties.getDailyDays() * 2L;
             case WEEKLY -> retentionProperties.getWeeklyWeeks();
             case MONTHLY -> retentionProperties.getMonthlyMonths();
-            case SEMI_ANNUAL -> retentionProperties.getSemiAnnualYears() * 2;
+            case SEMI_ANNUAL -> retentionProperties.getSemiAnnualYears();
             case ANNUAL -> retentionProperties.getAnnualYears();
             default -> 0;
         };
@@ -139,6 +142,7 @@ public class DashboardService {
     /**
      * Извлекает время из cron выражения (Spring формат: секунда минута час день месяц день_недели).
      * Пример: "0 30 3 * * *" → "03:30" (каждый день в 03:30).
+     * Поддерживает / и * в полях.
      */
     private String extractTimeFromCron(String cron) {
         if (cron == null || cron.isEmpty()) {
@@ -147,11 +151,40 @@ public class DashboardService {
         String[] parts = cron.trim().split("\\s+");
         if (parts.length >= 3) {
             // parts[0] = секунда, parts[1] = минута, parts[2] = час
-            String hour = parts[2].length() == 1 ? "0" + parts[2] : parts[2];
-            String minute = parts[1].length() == 1 ? "0" + parts[1] : parts[1];
+            String minute = extractCronField(parts[1]);
+            String hour = extractCronField(parts[2]);
+
+            // Если оба поля *, показываем "каждую минуту"
+            if ("*".equals(hour) && "*".equals(minute)) {
+                return "каждую минуту";
+            }
+            // Если час *, показываем "каждый час"
+            if ("*".equals(hour)) {
+                return "каждый час:" + minute;
+            }
+            // Если минута *, показываем "каждый час в :00"
+            if ("*".equals(minute)) {
+                return hour + ":00";
+            }
+
             return hour + ":" + minute;
         }
         return "N/A";
+    }
+
+    /**
+     * Извлекает значение из cron-поля, убирая спецсимволы (/ * , -).
+     */
+    private String extractCronField(String field) {
+        if (field == null || field.equals("*")) {
+            return "*";
+        }
+        // Убираем / и диапазоны: "0/5" → "0", "1-5" → "1"
+        String clean = field.split("[/\\-]")[0];
+        if (clean.isEmpty()) {
+            return "*";
+        }
+        return clean.length() == 1 ? "0" + clean : clean;
     }
 
     /**
@@ -172,14 +205,12 @@ public class DashboardService {
 
         if (Files.exists(path) && Files.isDirectory(path)) {
             try {
-                // 1. Текущий размер ВСЕХ файлов на диске
-//                usedSpaceBytes = calculateDirectorySize(path);
-                usedSpaceBytes = 500_000;
-
-                // 2. Общий размер диска
+                // 1. Общий размер диска
                 FileStore fileStore = Files.getFileStore(path);
-//                maxSpaceBytes = fileStore.getTotalSpace();
-                maxSpaceBytes = 400_000;
+                maxSpaceBytes = fileStore.getTotalSpace();
+
+                // 2. Сколько занято на диске (всеми файлами)
+                usedSpaceBytes = maxSpaceBytes - fileStore.getUsableSpace();
 
                 if (maxSpaceBytes > 0) {
                     usagePercent = (usedSpaceBytes * 100.0) / maxSpaceBytes;
@@ -379,8 +410,9 @@ public class DashboardService {
 
         ScheduleInfo scheduleInfo = getSafeScheduleInfo();
         StorageInfo storageInfo = getSafeStorageInfo();
+        boolean backupPaused = diskSpaceChecker.isDiskFull();
 
-        return new DashboardResponseDto(databases, scheduleInfo, storageInfo, true);
+        return new DashboardResponseDto(databases, scheduleInfo, storageInfo, true, backupPaused);
     }
 
     /**
@@ -436,9 +468,9 @@ public class DashboardService {
 
         if (Files.exists(path) && Files.isDirectory(path)) {
             try {
-                usedSpaceBytes = calculateDirectorySize(path);
                 FileStore fileStore = Files.getFileStore(path);
                 maxSpaceBytes = fileStore.getTotalSpace();
+                usedSpaceBytes = maxSpaceBytes - fileStore.getUsableSpace();
 
                 if (maxSpaceBytes > 0) {
                     usagePercent = (usedSpaceBytes * 100.0) / maxSpaceBytes;

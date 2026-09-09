@@ -30,4 +30,10 @@ public class BackupProperties {
      * Нужно ли писать JSON с отступами (pretty-print).
      */
     private boolean formattedJson = true;
+
+    /**
+     * Процент заполнения диска, при котором бэкапы приостанавливаются.
+     * По умолчанию 95%.
+     */
+    private int diskFullThresholdPercent = 95;
 }

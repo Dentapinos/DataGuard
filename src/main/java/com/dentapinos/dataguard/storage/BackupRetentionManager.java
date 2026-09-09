@@ -97,7 +97,7 @@ public class BackupRetentionManager {
             case DAILY      -> backupRetentionProperties.getDailyDays();
             case WEEKLY     -> backupRetentionProperties.getWeeklyWeeks();
             case MONTHLY    -> backupRetentionProperties.getMonthlyMonths();
-            case SEMI_ANNUAL -> backupRetentionProperties.getSemiAnnualYears() * 2;
+            case SEMI_ANNUAL -> backupRetentionProperties.getSemiAnnualYears();
             case ANNUAL     -> backupRetentionProperties.getAnnualYears();
             default         -> {
                 log.warn("[BACKUP_RETENTION] неизвестный уровень хранения: {}", tier);
