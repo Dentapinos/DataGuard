@@ -126,8 +126,15 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(NoResourceFoundException.class)
     public ResponseEntity<Void> handleNoResourceFoundException(NoResourceFoundException ex) {
-        // Игнорируем сканеры уязвимостей и запросы к отсутствующим статическим ресурсам (favicon, .env, Chrome DevTools)
-        log.debug("[IGNORE] Сканирование: {}", ex.getMessage());
+        // Игнорируем сканеры уязвимостей и запросы от ботов (favicon.ico, .env, etc.)
+        // Но НЕ блокируем реальные статические ресурсы
+        String message = ex.getMessage();
+        if (message != null && (message.contains("favicon") || message.contains(".env") || message.contains("robots.txt"))) {
+            log.debug("[IGNORE] Сканирование/мусорный запрос: {}", message);
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).build();
+        }
+        // Для остальных 404 (включая API-эндпоинты) — тоже тихий 404
+        log.debug("[IGNORE] Ресурс не найден: {}", message);
         return ResponseEntity.status(HttpStatus.NOT_FOUND).build();
     }
 
