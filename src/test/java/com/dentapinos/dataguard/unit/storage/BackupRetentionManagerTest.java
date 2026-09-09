@@ -15,8 +15,6 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import java.io.IOException;
 import java.nio.file.attribute.FileTime;
 import java.time.Instant;
-import java.time.LocalDate;
-import java.time.ZoneOffset;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -26,8 +24,8 @@ import static org.mockito.Mockito.*;
 
 /**
  * Юнит-тесты для BackupRetentionManager.
- * Проверяет применение политики хранения для всех уровней резервных копий (DAILY, WEEKLY, MONTHLY, SEMI_ANNUAL, ANNUAL),
- * включая граничные случаи, такие как отсутствие конфигурации, ошибки ввода-вывода и пустые списки файлов.
+ * Проверяет count-based политику хранения: оставляет N newest файлов,
+ * удаляет самые старые, выходящие за лимит.
  */
 @ExtendWith(MockitoExtension.class)
 @DisplayName("Unit-test для менеджера хранения резервных копий")
@@ -42,55 +40,75 @@ class BackupRetentionManagerTest {
     @InjectMocks
     private BackupRetentionManager retentionManager;
 
-    @BeforeEach
-    void setUp() {
-        // arrange
-        Mockito.reset(backupRetentionProperties, backupStorage);
-    }
+    // Mocks создаются MockitoExtension автоматически, reset не нужен
+    // каждый тест настраивает свои stubs
 
     // ==================== applyRetention(DAILY) Tests ====================
 
     @Nested
-    @DisplayName("applyRetention(DAILY)")
+    @DisplayName("applyRetention(DAILY) - count-based")
     class DailyRetentionTests {
 
         @Test
-        @DisplayName("должен удалять ежедневные резервные копии старше установленного срока хранения")
-        void shouldDeleteDailyBackupsOlderThanRetentionPeriod() throws Exception {
+        @DisplayName("должен удалять самые старые файлы, выходящие за лимит")
+        void shouldDeleteOldestFilesBeyondLimit() throws Exception {
             // arrange
             String database = "testdb";
-            when(backupRetentionProperties.getDailyDays()).thenReturn(3);
+            int maxCount = 3;
+            when(backupRetentionProperties.getDailyDays()).thenReturn(maxCount);
 
-            String oldBackup = "backup-old.zip";
-            String newBackup = "backup-new.zip";
+            String oldest = "backup-oldest.zip";
+            String old = "backup-old.zip";
+            String medium = "backup-medium.zip";
+            String recent = "backup-recent.zip";
+            String newest = "backup-newest.zip";
             when(backupStorage.list(BackupTier.DAILY, database))
-                    .thenReturn(List.of(oldBackup, newBackup));
+                    .thenReturn(List.of(oldest, old, medium, recent, newest));
 
-            // Рассчитайте порог: сейчас минус 3 дня
-            LocalDate now = LocalDate.now(ZoneOffset.UTC);
-            LocalDate cutoffDate = now.minusDays(3);
-            Instant cutoffInstant = cutoffDate.atStartOfDay().toInstant(ZoneOffset.UTC);
+            // Сортировка по времени создания (новые первыми при reversed)
+            Instant now = Instant.now();
+            when(backupStorage.getCreationTime(BackupTier.DAILY, database, oldest))
+                    .thenReturn(FileTime.from(now.minusSeconds(4 * 3600)));
+            when(backupStorage.getCreationTime(BackupTier.DAILY, database, old))
+                    .thenReturn(FileTime.from(now.minusSeconds(3 * 3600)));
+            when(backupStorage.getCreationTime(BackupTier.DAILY, database, medium))
+                    .thenReturn(FileTime.from(now.minusSeconds(2 * 3600)));
+            when(backupStorage.getCreationTime(BackupTier.DAILY, database, recent))
+                    .thenReturn(FileTime.from(now.minusSeconds(1 * 3600)));
+            when(backupStorage.getCreationTime(BackupTier.DAILY, database, newest))
+                    .thenReturn(FileTime.from(now));
 
-            // oldBackup: на 10 дней старше отсечения
-            Instant oldCreated = cutoffInstant.minusSeconds(10L * 24 * 3600);
-            when(backupStorage.getCreationTime(BackupTier.DAILY, database, oldBackup))
-                    .thenReturn(FileTime.from(oldCreated));
+            // act
+            retentionManager.applyRetention(BackupTier.DAILY, database);
 
-            // newBackup: на 1 день позже границы
-            Instant newCreated = cutoffInstant.plusSeconds(24 * 3600);
-            when(backupStorage.getCreationTime(BackupTier.DAILY, database, newBackup))
-                    .thenReturn(FileTime.from(newCreated));
+            // assert: должны удалиться 2 самых старых (oldest, old), осталось 3 newest
+            verify(backupStorage).delete(eq(BackupTier.DAILY), eq(database), eq(oldest));
+            verify(backupStorage).delete(eq(BackupTier.DAILY), eq(database), eq(old));
+            verify(backupStorage, never()).delete(eq(BackupTier.DAILY), eq(database), eq(medium));
+            verify(backupStorage, never()).delete(eq(BackupTier.DAILY), eq(database), eq(recent));
+            verify(backupStorage, never()).delete(eq(BackupTier.DAILY), eq(database), eq(newest));
+        }
+
+        @Test
+        @DisplayName("должен ничего не делать, если файлов меньше или равно лимиту")
+        void shouldDoNothingWhenFilesWithinLimit() throws Exception {
+            // arrange
+            String database = "testdb";
+            int maxCount = 3;
+            when(backupRetentionProperties.getDailyDays()).thenReturn(maxCount);
+
+            when(backupStorage.list(BackupTier.DAILY, database))
+                    .thenReturn(List.of("backup1.zip", "backup2.zip"));
 
             // act
             retentionManager.applyRetention(BackupTier.DAILY, database);
 
             // assert
-            verify(backupStorage).delete(eq(BackupTier.DAILY), eq(database), eq(oldBackup));
-            verify(backupStorage, never()).delete(eq(BackupTier.DAILY), eq(database), eq(newBackup));
+            verify(backupStorage, never()).delete(any(), any(), any());
         }
 
         @Test
-        @DisplayName("должен ничего не делать, если список резервных копий пустой")
+        @DisplayName("должен ничего не делать, если список пустой")
         void shouldDoNothingWhenBackupListIsEmpty() throws Exception {
             // arrange
             String database = "testdb";
@@ -105,36 +123,40 @@ class BackupRetentionManagerTest {
         }
 
         @Test
-        @DisplayName("должен пропустить файл, если getCreationTime выбрасывает IOException")
+        @DisplayName("должен пропускать файл, если getCreationTime выбрасывает IOException")
         void shouldSkipFileWhenGetCreationTimeFails() throws Exception {
             // arrange
             String database = "testdb";
-            when(backupRetentionProperties.getDailyDays()).thenReturn(7);
+            int maxCount = 2;
+            when(backupRetentionProperties.getDailyDays()).thenReturn(maxCount);
 
             String badFile = "bad.zip";
-            String goodFile = "good.zip";
+            String file1 = "backup1.zip";
+            String file2 = "backup2.zip";
+            String file3 = "backup3.zip";
             when(backupStorage.list(BackupTier.DAILY, database))
-                    .thenReturn(List.of(badFile, goodFile));
+                    .thenReturn(List.of(badFile, file1, file2, file3));
 
-            // badFile бросает IOException
+            // badFile бросает IOException — будет иметь EPOCH время (самый старый)
             when(backupStorage.getCreationTime(BackupTier.DAILY, database, badFile))
                     .thenThrow(new IOException("test IO"));
 
-            // goodFile старше отсечения -> следует удалить
-            LocalDate now = LocalDate.now(ZoneOffset.UTC);
-            LocalDate cutoffDate = now.minusDays(7);
-            Instant cutoffInstant = cutoffDate.atStartOfDay().toInstant(ZoneOffset.UTC);
-            Instant goodCreated = cutoffInstant.minusSeconds(3600);
-
-            when(backupStorage.getCreationTime(BackupTier.DAILY, database, goodFile))
-                    .thenReturn(FileTime.from(goodCreated));
+            Instant now = Instant.now();
+            when(backupStorage.getCreationTime(BackupTier.DAILY, database, file1))
+                    .thenReturn(FileTime.from(now.minusSeconds(3 * 3600)));
+            when(backupStorage.getCreationTime(BackupTier.DAILY, database, file2))
+                    .thenReturn(FileTime.from(now.minusSeconds(2 * 3600)));
+            when(backupStorage.getCreationTime(BackupTier.DAILY, database, file3))
+                    .thenReturn(FileTime.from(now.minusSeconds(1 * 3600)));
 
             // act
             retentionManager.applyRetention(BackupTier.DAILY, database);
 
-            // assert
-            verify(backupStorage, never()).delete(eq(BackupTier.DAILY), eq(database), eq(badFile));
-            verify(backupStorage).delete(eq(BackupTier.DAILY), eq(database), eq(goodFile));
+            // assert: badFile (EPOCH) удалится как самый старый, file1 тоже удалится
+            verify(backupStorage).delete(eq(BackupTier.DAILY), eq(database), eq(badFile));
+            verify(backupStorage).delete(eq(BackupTier.DAILY), eq(database), eq(file1));
+            verify(backupStorage, never()).delete(eq(BackupTier.DAILY), eq(database), eq(file2));
+            verify(backupStorage, never()).delete(eq(BackupTier.DAILY), eq(database), eq(file3));
         }
 
         @Test
@@ -161,38 +183,37 @@ class BackupRetentionManagerTest {
     // ==================== applyRetention(WEEKLY) Tests ====================
 
     @Nested
-    @DisplayName("applyRetention(WEEKLY)")
+    @DisplayName("applyRetention(WEEKLY) - count-based")
     class WeeklyRetentionTests {
 
         @Test
-        @DisplayName("должен удалять еженедельные резервные копии старше установленного срока хранения")
-        void shouldDeleteWeeklyBackupsOlderThanRetentionPeriod() throws Exception {
+        @DisplayName("должен удалять самые старые файлы, выходящие за лимит")
+        void shouldDeleteOldestFilesBeyondLimit() throws Exception {
             // arrange
             String database = "testdb";
-            when(backupRetentionProperties.getWeeklyWeeks()).thenReturn(2);
+            int maxCount = 2;
+            when(backupRetentionProperties.getWeeklyWeeks()).thenReturn(maxCount);
 
             String oldFile = "weekly-old.zip";
+            String mediumFile = "weekly-medium.zip";
             String newFile = "weekly-new.zip";
             when(backupStorage.list(BackupTier.WEEKLY, database))
-                    .thenReturn(List.of(oldFile, newFile));
+                    .thenReturn(List.of(oldFile, mediumFile, newFile));
 
-            LocalDate now = LocalDate.now(ZoneOffset.UTC);
-            LocalDate cutoffDate = now.minusWeeks(2);
-            Instant cutoffInstant = cutoffDate.atStartOfDay().toInstant(ZoneOffset.UTC);
-
-            Instant oldCreated = cutoffInstant.minusSeconds(3600); // before cutoff
-            Instant newCreated = cutoffInstant.plusSeconds(24 * 3600); // after cutoff
-
+            Instant now = Instant.now();
             when(backupStorage.getCreationTime(BackupTier.WEEKLY, database, oldFile))
-                    .thenReturn(FileTime.from(oldCreated));
+                    .thenReturn(FileTime.from(now.minusSeconds(3 * 24 * 3600)));
+            when(backupStorage.getCreationTime(BackupTier.WEEKLY, database, mediumFile))
+                    .thenReturn(FileTime.from(now.minusSeconds(2 * 24 * 3600)));
             when(backupStorage.getCreationTime(BackupTier.WEEKLY, database, newFile))
-                    .thenReturn(FileTime.from(newCreated));
+                    .thenReturn(FileTime.from(now));
 
             // act
             retentionManager.applyRetention(BackupTier.WEEKLY, database);
 
             // assert
             verify(backupStorage).delete(eq(BackupTier.WEEKLY), eq(database), eq(oldFile));
+            verify(backupStorage, never()).delete(eq(BackupTier.WEEKLY), eq(database), eq(mediumFile));
             verify(backupStorage, never()).delete(eq(BackupTier.WEEKLY), eq(database), eq(newFile));
         }
 
@@ -210,74 +231,42 @@ class BackupRetentionManagerTest {
             // assert
             verify(backupStorage, never()).delete(any(), any(), any());
         }
-
-        @Test
-        @DisplayName("должен пропустить файл, если getCreationTime выбрасывает IOException для еженедельного уровня")
-        void shouldSkipFileWhenGetCreationTimeFailsForWeekly() throws Exception {
-            // arrange
-            String database = "testdb";
-            when(backupRetentionProperties.getWeeklyWeeks()).thenReturn(2);
-
-            String badFile = "bad.zip";
-            String goodFile = "good.zip";
-            when(backupStorage.list(BackupTier.WEEKLY, database))
-                    .thenReturn(List.of(badFile, goodFile));
-
-            when(backupStorage.getCreationTime(BackupTier.WEEKLY, database, badFile))
-                    .thenThrow(new IOException("test IO"));
-
-            LocalDate now = LocalDate.now(ZoneOffset.UTC);
-            LocalDate cutoffDate = now.minusWeeks(2);
-            Instant cutoffInstant = cutoffDate.atStartOfDay().toInstant(ZoneOffset.UTC);
-            Instant goodCreated = cutoffInstant.minusSeconds(7200);
-
-            when(backupStorage.getCreationTime(BackupTier.WEEKLY, database, goodFile))
-                    .thenReturn(FileTime.from(goodCreated));
-
-            // act
-            retentionManager.applyRetention(BackupTier.WEEKLY, database);
-
-            // assert
-            verify(backupStorage, never()).delete(eq(BackupTier.WEEKLY), eq(database), eq(badFile));
-            verify(backupStorage).delete(eq(BackupTier.WEEKLY), eq(database), eq(goodFile));
-        }
     }
 
     // ==================== applyRetention(MONTHLY) Tests ====================
 
     @Nested
-    @DisplayName("applyRetention(MONTHLY)")
+    @DisplayName("applyRetention(MONTHLY) - count-based")
     class MonthlyRetentionTests {
 
         @Test
-        @DisplayName("должен удалять ежемесячные резервные копии старше установленного срока хранения")
-        void shouldDeleteMonthlyBackupsOlderThanRetentionPeriod() throws Exception {
+        @DisplayName("должен удалять самые старые файлы, выходящие за лимит")
+        void shouldDeleteOldestFilesBeyondLimit() throws Exception {
             // arrange
             String database = "testdb";
-            when(backupRetentionProperties.getMonthlyMonths()).thenReturn(3);
+            int maxCount = 2;
+            when(backupRetentionProperties.getMonthlyMonths()).thenReturn(maxCount);
 
             String oldFile = "monthly-old.zip";
+            String mediumFile = "monthly-medium.zip";
             String newFile = "monthly-new.zip";
             when(backupStorage.list(BackupTier.MONTHLY, database))
-                    .thenReturn(List.of(oldFile, newFile));
+                    .thenReturn(List.of(oldFile, mediumFile, newFile));
 
-            LocalDate now = LocalDate.now(ZoneOffset.UTC);
-            LocalDate cutoffDate = now.minusMonths(3);
-            Instant cutoffInstant = cutoffDate.atStartOfDay().toInstant(ZoneOffset.UTC);
-
-            Instant oldCreated = cutoffInstant.minusSeconds(3600);
-            Instant newCreated = cutoffInstant.plusSeconds(24 * 3600);
-
+            Instant now = Instant.now();
             when(backupStorage.getCreationTime(BackupTier.MONTHLY, database, oldFile))
-                    .thenReturn(FileTime.from(oldCreated));
+                    .thenReturn(FileTime.from(now.minusSeconds(3 * 24 * 3600)));
+            when(backupStorage.getCreationTime(BackupTier.MONTHLY, database, mediumFile))
+                    .thenReturn(FileTime.from(now.minusSeconds(2 * 24 * 3600)));
             when(backupStorage.getCreationTime(BackupTier.MONTHLY, database, newFile))
-                    .thenReturn(FileTime.from(newCreated));
+                    .thenReturn(FileTime.from(now));
 
             // act
             retentionManager.applyRetention(BackupTier.MONTHLY, database);
 
             // assert
             verify(backupStorage).delete(eq(BackupTier.MONTHLY), eq(database), eq(oldFile));
+            verify(backupStorage, never()).delete(eq(BackupTier.MONTHLY), eq(database), eq(mediumFile));
             verify(backupStorage, never()).delete(eq(BackupTier.MONTHLY), eq(database), eq(newFile));
         }
 
@@ -295,75 +284,51 @@ class BackupRetentionManagerTest {
             // assert
             verify(backupStorage, never()).delete(any(), any(), any());
         }
-
-        @Test
-        @DisplayName("должен пропустить файл, если getCreationTime выбрасывает IOException для ежемесячного уровня")
-        void shouldSkipFileWhenGetCreationTimeFailsForMonthly() throws Exception {
-            // arrange
-            String database = "testdb";
-            when(backupRetentionProperties.getMonthlyMonths()).thenReturn(3);
-
-            String badFile = "bad.zip";
-            String goodFile = "good.zip";
-            when(backupStorage.list(BackupTier.MONTHLY, database))
-                    .thenReturn(List.of(badFile, goodFile));
-
-            when(backupStorage.getCreationTime(BackupTier.MONTHLY, database, badFile))
-                    .thenThrow(new IOException("test IO"));
-
-            LocalDate now = LocalDate.now(ZoneOffset.UTC);
-            LocalDate cutoffDate = now.minusMonths(3);
-            Instant cutoffInstant = cutoffDate.atStartOfDay().toInstant(ZoneOffset.UTC);
-            Instant goodCreated = cutoffInstant.minusSeconds(14400);
-
-            when(backupStorage.getCreationTime(BackupTier.MONTHLY, database, goodFile))
-                    .thenReturn(FileTime.from(goodCreated));
-
-            // act
-            retentionManager.applyRetention(BackupTier.MONTHLY, database);
-
-            // assert
-            verify(backupStorage, never()).delete(eq(BackupTier.MONTHLY), eq(database), eq(badFile));
-            verify(backupStorage).delete(eq(BackupTier.MONTHLY), eq(database), eq(goodFile));
-        }
     }
 
     // ==================== applyRetention(SEMI_ANNUAL) Tests ====================
 
     @Nested
-    @DisplayName("applyRetention(SEMI_ANNUAL)")
+    @DisplayName("applyRetention(SEMI_ANNUAL) - count-based")
     class SemiAnnualRetentionTests {
 
         @Test
-        @DisplayName("должен удалять полугодовые резервные копии старше установленного срока хранения")
-        void shouldDeleteSemiAnnualBackupsOlderThanRetentionPeriod() throws Exception {
+        @DisplayName("должен использовать semiAnnualYears * 2 как лимит")
+        void shouldUseYearsTimesTwoCalculation() throws Exception {
             // arrange
             String database = "testdb";
-            when(backupRetentionProperties.getSemiAnnualYears()).thenReturn(1); // 6 months
+            // 2 года = 4 полугодия
+            when(backupRetentionProperties.getSemiAnnualYears()).thenReturn(2);
 
-            String oldFile = "semi-old.zip";
-            String newFile = "semi-new.zip";
+            String old1 = "semi-old1.zip";
+            String old2 = "semi-old2.zip";
+            String new1 = "semi-new1.zip";
+            String new2 = "semi-new2.zip";
+            String new3 = "semi-new3.zip";
             when(backupStorage.list(BackupTier.SEMI_ANNUAL, database))
-                    .thenReturn(List.of(oldFile, newFile));
+                    .thenReturn(List.of(old1, old2, new1, new2, new3));
 
-            LocalDate now = LocalDate.now(ZoneOffset.UTC);
-            LocalDate cutoffDate = now.minusMonths(1 * 6L);
-            Instant cutoffInstant = cutoffDate.atStartOfDay().toInstant(ZoneOffset.UTC);
+            Instant now = Instant.now();
+            when(backupStorage.getCreationTime(BackupTier.SEMI_ANNUAL, database, old1))
+                    .thenReturn(FileTime.from(now.minusSeconds(5 * 3600)));
+            when(backupStorage.getCreationTime(BackupTier.SEMI_ANNUAL, database, old2))
+                    .thenReturn(FileTime.from(now.minusSeconds(4 * 3600)));
+            when(backupStorage.getCreationTime(BackupTier.SEMI_ANNUAL, database, new1))
+                    .thenReturn(FileTime.from(now.minusSeconds(3 * 3600)));
+            when(backupStorage.getCreationTime(BackupTier.SEMI_ANNUAL, database, new2))
+                    .thenReturn(FileTime.from(now.minusSeconds(2 * 3600)));
+            when(backupStorage.getCreationTime(BackupTier.SEMI_ANNUAL, database, new3))
+                    .thenReturn(FileTime.from(now));
 
-            Instant oldCreated = cutoffInstant.minusSeconds(3600);
-            Instant newCreated = cutoffInstant.plusSeconds(24 * 3600);
-
-            when(backupStorage.getCreationTime(BackupTier.SEMI_ANNUAL, database, oldFile))
-                    .thenReturn(FileTime.from(oldCreated));
-            when(backupStorage.getCreationTime(BackupTier.SEMI_ANNUAL, database, newFile))
-                    .thenReturn(FileTime.from(newCreated));
-
-            // act
+            // act: maxCount = 2 * 2 = 4, удалить 1 старый
             retentionManager.applyRetention(BackupTier.SEMI_ANNUAL, database);
 
             // assert
-            verify(backupStorage).delete(eq(BackupTier.SEMI_ANNUAL), eq(database), eq(oldFile));
-            verify(backupStorage, never()).delete(eq(BackupTier.SEMI_ANNUAL), eq(database), eq(newFile));
+            verify(backupStorage).delete(eq(BackupTier.SEMI_ANNUAL), eq(database), eq(old1));
+            verify(backupStorage, never()).delete(eq(BackupTier.SEMI_ANNUAL), eq(database), eq(old2));
+            verify(backupStorage, never()).delete(eq(BackupTier.SEMI_ANNUAL), eq(database), eq(new1));
+            verify(backupStorage, never()).delete(eq(BackupTier.SEMI_ANNUAL), eq(database), eq(new2));
+            verify(backupStorage, never()).delete(eq(BackupTier.SEMI_ANNUAL), eq(database), eq(new3));
         }
 
         @Test
@@ -371,7 +336,7 @@ class BackupRetentionManagerTest {
         void shouldDoNothingWhenSemiAnnualBackupListIsEmpty() throws Exception {
             // arrange
             String database = "testdb";
-            when(backupRetentionProperties.getSemiAnnualYears()).thenReturn(2); // 12 months
+            when(backupRetentionProperties.getSemiAnnualYears()).thenReturn(2);
             when(backupStorage.list(BackupTier.SEMI_ANNUAL, database)).thenReturn(List.of());
 
             // act
@@ -380,106 +345,42 @@ class BackupRetentionManagerTest {
             // assert
             verify(backupStorage, never()).delete(any(), any(), any());
         }
-
-        @Test
-        @DisplayName("должен пропустить файл, если getCreationTime выбрасывает IOException для полугодового уровня")
-        void shouldSkipFileWhenGetCreationTimeFailsForSemiAnnual() throws Exception {
-            // arrange
-            String database = "testdb";
-            when(backupRetentionProperties.getSemiAnnualYears()).thenReturn(1); // 6 months
-
-            String badFile = "bad.zip";
-            String goodFile = "good.zip";
-            when(backupStorage.list(BackupTier.SEMI_ANNUAL, database))
-                    .thenReturn(List.of(badFile, goodFile));
-
-            when(backupStorage.getCreationTime(BackupTier.SEMI_ANNUAL, database, badFile))
-                    .thenThrow(new IOException("test IO"));
-
-            LocalDate now = LocalDate.now(ZoneOffset.UTC);
-            LocalDate cutoffDate = now.minusMonths(6);
-            Instant cutoffInstant = cutoffDate.atStartOfDay().toInstant(ZoneOffset.UTC);
-            Instant goodCreated = cutoffInstant.minusSeconds(28800);
-
-            when(backupStorage.getCreationTime(BackupTier.SEMI_ANNUAL, database, goodFile))
-                    .thenReturn(FileTime.from(goodCreated));
-
-            // act
-            retentionManager.applyRetention(BackupTier.SEMI_ANNUAL, database);
-
-            // assert
-            verify(backupStorage, never()).delete(eq(BackupTier.SEMI_ANNUAL), eq(database), eq(badFile));
-            verify(backupStorage).delete(eq(BackupTier.SEMI_ANNUAL), eq(database), eq(goodFile));
-        }
-
-        @Test
-        @DisplayName("должен использовать правильное вычисление: годы * 6 месяцев")
-        void shouldUseYearsTimesSixMonthsCalculation() throws Exception {
-            // Given - 2 years = 12 months retention
-            String database = "testdb";
-            when(backupRetentionProperties.getSemiAnnualYears()).thenReturn(2); // 12 months
-
-            String oldFile = "semi-old.zip";
-            String newFile = "semi-new.zip";
-            when(backupStorage.list(BackupTier.SEMI_ANNUAL, database))
-                    .thenReturn(List.of(oldFile, newFile));
-
-            LocalDate now = LocalDate.now(ZoneOffset.UTC);
-            LocalDate cutoffDate = now.minusMonths(2 * 6L); // 12 months
-            Instant cutoffInstant = cutoffDate.atStartOfDay().toInstant(ZoneOffset.UTC);
-
-            Instant oldCreated = cutoffInstant.minusSeconds(3600);
-            Instant newCreated = cutoffInstant.plusSeconds(24 * 3600);
-
-            when(backupStorage.getCreationTime(BackupTier.SEMI_ANNUAL, database, oldFile))
-                    .thenReturn(FileTime.from(oldCreated));
-            when(backupStorage.getCreationTime(BackupTier.SEMI_ANNUAL, database, newFile))
-                    .thenReturn(FileTime.from(newCreated));
-
-            // act
-            retentionManager.applyRetention(BackupTier.SEMI_ANNUAL, database);
-
-            // assert
-            verify(backupStorage).delete(eq(BackupTier.SEMI_ANNUAL), eq(database), eq(oldFile));
-            verify(backupStorage, never()).delete(eq(BackupTier.SEMI_ANNUAL), eq(database), eq(newFile));
-        }
     }
 
     // ==================== applyRetention(ANNUAL) Tests ====================
 
     @Nested
-    @DisplayName("applyRetention(ANNUAL)")
+    @DisplayName("applyRetention(ANNUAL) - count-based")
     class AnnualRetentionTests {
 
         @Test
-        @DisplayName("должен удалять ежегодные резервные копии старше установленного срока хранения")
-        void shouldDeleteAnnualBackupsOlderThanRetentionPeriod() throws Exception {
+        @DisplayName("должен удалять самые старые файлы, выходящие за лимит")
+        void shouldDeleteOldestFilesBeyondLimit() throws Exception {
             // arrange
             String database = "testdb";
-            when(backupRetentionProperties.getAnnualYears()).thenReturn(5);
+            int maxCount = 2;
+            when(backupRetentionProperties.getAnnualYears()).thenReturn(maxCount);
 
             String oldFile = "annual-old.zip";
+            String mediumFile = "annual-medium.zip";
             String newFile = "annual-new.zip";
             when(backupStorage.list(BackupTier.ANNUAL, database))
-                    .thenReturn(List.of(oldFile, newFile));
+                    .thenReturn(List.of(oldFile, mediumFile, newFile));
 
-            LocalDate now = LocalDate.now(ZoneOffset.UTC);
-            LocalDate cutoffDate = now.minusYears(5);
-            Instant cutoffInstant = cutoffDate.atStartOfDay().toInstant(ZoneOffset.UTC);
-
-            Instant oldCreated = cutoffInstant.minusSeconds(3600);
-            Instant newCreated = cutoffInstant.plusSeconds(24 * 3600);
-
+            Instant now = Instant.now();
             when(backupStorage.getCreationTime(BackupTier.ANNUAL, database, oldFile))
-                    .thenReturn(FileTime.from(oldCreated));
+                    .thenReturn(FileTime.from(now.minusSeconds(3 * 24 * 3600)));
+            when(backupStorage.getCreationTime(BackupTier.ANNUAL, database, mediumFile))
+                    .thenReturn(FileTime.from(now.minusSeconds(2 * 24 * 3600)));
             when(backupStorage.getCreationTime(BackupTier.ANNUAL, database, newFile))
-                    .thenReturn(FileTime.from(newCreated));
+                    .thenReturn(FileTime.from(now));
 
             // act
             retentionManager.applyRetention(BackupTier.ANNUAL, database);
 
             // assert
             verify(backupStorage).delete(eq(BackupTier.ANNUAL), eq(database), eq(oldFile));
+            verify(backupStorage, never()).delete(eq(BackupTier.ANNUAL), eq(database), eq(mediumFile));
             verify(backupStorage, never()).delete(eq(BackupTier.ANNUAL), eq(database), eq(newFile));
         }
 
@@ -497,63 +398,6 @@ class BackupRetentionManagerTest {
             // assert
             verify(backupStorage, never()).delete(any(), any(), any());
         }
-
-        @Test
-        @DisplayName("должен пропустить файл, если getCreationTime выбрасывает IOException для ежегодного уровня")
-        void shouldSkipFileWhenGetCreationTimeFailsForAnnual() throws Exception {
-            // arrange
-            String database = "testdb";
-            when(backupRetentionProperties.getAnnualYears()).thenReturn(5);
-
-            String badFile = "bad.zip";
-            String goodFile = "good.zip";
-            when(backupStorage.list(BackupTier.ANNUAL, database))
-                    .thenReturn(List.of(badFile, goodFile));
-
-            when(backupStorage.getCreationTime(BackupTier.ANNUAL, database, badFile))
-                    .thenThrow(new IOException("test IO"));
-
-            LocalDate now = LocalDate.now(ZoneOffset.UTC);
-            LocalDate cutoffDate = now.minusYears(5);
-            Instant cutoffInstant = cutoffDate.atStartOfDay().toInstant(ZoneOffset.UTC);
-            Instant goodCreated = cutoffInstant.minusSeconds(57600);
-
-            when(backupStorage.getCreationTime(BackupTier.ANNUAL, database, goodFile))
-                    .thenReturn(FileTime.from(goodCreated));
-
-            // act
-            retentionManager.applyRetention(BackupTier.ANNUAL, database);
-
-            // assert
-            verify(backupStorage, never()).delete(eq(BackupTier.ANNUAL), eq(database), eq(badFile));
-            verify(backupStorage).delete(eq(BackupTier.ANNUAL), eq(database), eq(goodFile));
-        }
-
-        @Test
-        @DisplayName("должен удалять резервную копию, когда она точно совпадает с датой отсечения (до или в момент отсечения)")
-        void shouldDeleteBackupExactlyOnCutoffDate() throws Exception {
-            // arrange
-            String database = "testdb";
-            when(backupRetentionProperties.getAnnualYears()).thenReturn(5);
-
-            String backupOnCutoff = "backup-on-cutoff.zip";
-            when(backupStorage.list(BackupTier.ANNUAL, database))
-                    .thenReturn(List.of(backupOnCutoff));
-
-            LocalDate now = LocalDate.now(ZoneOffset.UTC);
-            LocalDate cutoffDate = now.minusYears(5);
-            Instant cutoffInstant = cutoffDate.atStartOfDay().toInstant(ZoneOffset.UTC);
-
-            // Файл создан ровно в момент отсечения (следует удалить, потому что он был до или равен)
-            when(backupStorage.getCreationTime(BackupTier.ANNUAL, database, backupOnCutoff))
-                    .thenReturn(FileTime.from(cutoffInstant));
-
-            // act
-            retentionManager.applyRetention(BackupTier.ANNUAL, database);
-
-            // assert
-            verify(backupStorage).delete(eq(BackupTier.ANNUAL), eq(database), eq(backupOnCutoff));
-        }
     }
 
     // ==================== Edge Cases ====================
@@ -561,113 +405,6 @@ class BackupRetentionManagerTest {
     @Nested
     @DisplayName("Граничные случаи и обработка ошибок")
     class EdgeCasesTests {
-
-        @Test
-        @DisplayName("должен выполнять отладочный журнал и возвращать результат, когда политика хранения не настроена для уровня")
-        void shouldSkipWhenNoConfigurationForTier() throws Exception {
-            // arrange -Мы не ставим заглушки свойств, поэтому все возвращают значения по умолчанию
-            String database = "testdb";
-            when(backupRetentionProperties.getDailyDays()).thenReturn(0);
-            when(backupStorage.list(eq(BackupTier.DAILY), eq(database))).thenReturn(List.of());
-
-            // act
-            retentionManager.applyRetention(BackupTier.DAILY, database);
-
-            // assert - Ничего удалять
-            verify(backupStorage, never()).delete(any(), any(), any());
-        }
-
-        @Test
-        @DisplayName("должен обрабатывать IOException во время удаления и продолжать обработку остальных файлов")
-        void shouldContinueAfterDeleteError() throws Exception {
-            // arrange
-            String database = "testdb";
-            when(backupRetentionProperties.getDailyDays()).thenReturn(3);
-
-            String file1 = "backup1.zip";
-            String file2 = "backup2.zip";
-            String file3 = "backup3.zip";
-            when(backupStorage.list(BackupTier.DAILY, database))
-                    .thenReturn(List.of(file1, file2, file3));
-
-            LocalDate now = LocalDate.now(ZoneOffset.UTC);
-            LocalDate cutoffDate = now.minusDays(3);
-            Instant cutoffInstant = cutoffDate.atStartOfDay().toInstant(ZoneOffset.UTC);
-
-            Instant created = cutoffInstant.minusSeconds(3600);
-
-            //Все файлы достаточно стары, чтобы их можно было удалить
-            when(backupStorage.getCreationTime(BackupTier.DAILY, database, file1))
-                    .thenReturn(FileTime.from(created));
-            when(backupStorage.getCreationTime(BackupTier.DAILY, database, file2))
-                    .thenReturn(FileTime.from(created));
-            when(backupStorage.getCreationTime(BackupTier.DAILY, database, file3))
-                    .thenReturn(FileTime.from(created));
-
-            //file2 ставит IOException на удаление, другие успешно
-            doThrow(new IOException("delete failed"))
-                    .when(backupStorage).delete(eq(BackupTier.DAILY), eq(database), eq(file2));
-            doAnswer(invocation -> null)
-                    .when(backupStorage).delete(eq(BackupTier.DAILY), eq(database), eq(file1));
-            doAnswer(invocation -> null)
-                    .when(backupStorage).delete(eq(BackupTier.DAILY), eq(database), eq(file3));
-
-            // act
-            retentionManager.applyRetention(BackupTier.DAILY, database);
-
-            // assert - File1 и File3 были удалены, file2 провалился, но обработка не остановилась
-            verify(backupStorage).delete(eq(BackupTier.DAILY), eq(database), eq(file1));
-            verify(backupStorage).delete(eq(BackupTier.DAILY), eq(database), eq(file2));
-            verify(backupStorage).delete(eq(BackupTier.DAILY), eq(database), eq(file3));
-        }
-
-        @Test
-        @DisplayName("должен обрабатывать несколько файлов, где некоторые находятся в пределах срока хранения, а некоторые нет")
-        void shouldOnlyDeleteOldBackups() throws Exception {
-            // arrange
-            String database = "testdb";
-            when(backupRetentionProperties.getDailyDays()).thenReturn(7);
-
-            String veryOld = "very-old.zip";
-            String slightlyOld = "slightly-old.zip";
-            String recent = "recent.zip";
-            String veryRecent = "very-recent.zip";
-            when(backupStorage.list(BackupTier.DAILY, database))
-                    .thenReturn(List.of(veryOld, slightlyOld, recent, veryRecent));
-
-            LocalDate now = LocalDate.now(ZoneOffset.UTC);
-            LocalDate cutoffDate = now.minusDays(7);
-            Instant cutoffInstant = cutoffDate.atStartOfDay().toInstant(ZoneOffset.UTC);
-
-            // verOld: 20 дней назад -> должен удалить
-            Instant veryOldCreated = cutoffInstant.minusSeconds(20 * 24 * 3600);
-            when(backupStorage.getCreationTime(BackupTier.DAILY, database, veryOld))
-                    .thenReturn(FileTime.from(veryOldCreated));
-
-            //littleOld: 10 дней назад -> должен удалить
-            Instant slightlyOldCreated = cutoffInstant.minusSeconds(10 * 24 * 3600);
-            when(backupStorage.getCreationTime(BackupTier.DAILY, database, slightlyOld))
-                    .thenReturn(FileTime.from(slightlyOldCreated));
-
-            // Недавние: через 5 дней после отключения — > НЕ должен удалять
-            Instant recentCreated = cutoffInstant.plusSeconds(5 * 24 * 3600);
-            when(backupStorage.getCreationTime(BackupTier.DAILY, database, recent))
-                    .thenReturn(FileTime.from(recentCreated));
-
-            // Очень недавно: через 1 день после отсека -> НЕ должен удалять
-            Instant veryRecentCreated = cutoffInstant.plusSeconds(24 * 3600);
-            when(backupStorage.getCreationTime(BackupTier.DAILY, database, veryRecent))
-                    .thenReturn(FileTime.from(veryRecentCreated));
-
-            // act
-            retentionManager.applyRetention(BackupTier.DAILY, database);
-
-            // assert
-            verify(backupStorage).delete(eq(BackupTier.DAILY), eq(database), eq(veryOld));
-            verify(backupStorage).delete(eq(BackupTier.DAILY), eq(database), eq(slightlyOld));
-            verify(backupStorage, never()).delete(eq(BackupTier.DAILY), eq(database), eq(recent));
-            verify(backupStorage, never()).delete(eq(BackupTier.DAILY), eq(database), eq(veryRecent));
-        }
 
         @Test
         @DisplayName("должен корректно обрабатывать null уровень хранения")
@@ -680,6 +417,71 @@ class BackupRetentionManagerTest {
 
             // assert
             verify(backupStorage, never()).delete(any(), any(), any());
+        }
+
+        @Test
+        @DisplayName("должен обрабатывать IOException во время удаления и продолжать обработку остальных файлов")
+        void shouldContinueAfterDeleteError() throws Exception {
+            // arrange
+            String database = "testdb";
+            int maxCount = 1;
+            when(backupRetentionProperties.getDailyDays()).thenReturn(maxCount);
+
+            String file1 = "backup1.zip";
+            String file2 = "backup2.zip";
+            String file3 = "backup3.zip";
+            when(backupStorage.list(BackupTier.DAILY, database))
+                    .thenReturn(List.of(file1, file2, file3));
+
+            Instant now = Instant.now();
+            when(backupStorage.getCreationTime(BackupTier.DAILY, database, file1))
+                    .thenReturn(FileTime.from(now.minusSeconds(3 * 3600)));
+            when(backupStorage.getCreationTime(BackupTier.DAILY, database, file2))
+                    .thenReturn(FileTime.from(now.minusSeconds(2 * 3600)));
+            when(backupStorage.getCreationTime(BackupTier.DAILY, database, file3))
+                    .thenReturn(FileTime.from(now.minusSeconds(1 * 3600)));
+
+            // file2 бросает IOException при удалении
+            doThrow(new IOException("delete failed"))
+                    .when(backupStorage).delete(eq(BackupTier.DAILY), eq(database), eq(file2));
+            doAnswer(invocation -> null)
+                    .when(backupStorage).delete(eq(BackupTier.DAILY), eq(database), eq(file1));
+
+            // act
+            retentionManager.applyRetention(BackupTier.DAILY, database);
+
+            // assert: file1 удалён успешно, file2 провалился, но обработка продолжилась
+            verify(backupStorage).delete(eq(BackupTier.DAILY), eq(database), eq(file1));
+            verify(backupStorage).delete(eq(BackupTier.DAILY), eq(database), eq(file2));
+            verify(backupStorage, never()).delete(eq(BackupTier.DAILY), eq(database), eq(file3));
+        }
+
+        @Test
+        @DisplayName("должен удалить все файлы, если их больше лимита")
+        void shouldDeleteAllWhenAllExceedLimit() throws Exception {
+            // arrange
+            String database = "testdb";
+            int maxCount = 0;
+            when(backupRetentionProperties.getDailyDays()).thenReturn(maxCount);
+
+            when(backupStorage.list(BackupTier.DAILY, database))
+                    .thenReturn(List.of("backup1.zip", "backup2.zip", "backup3.zip"));
+
+            Instant now = Instant.now();
+            when(backupStorage.getCreationTime(BackupTier.DAILY, database, "backup1.zip"))
+                    .thenReturn(FileTime.from(now.minusSeconds(3 * 3600)));
+            when(backupStorage.getCreationTime(BackupTier.DAILY, database, "backup2.zip"))
+                    .thenReturn(FileTime.from(now.minusSeconds(2 * 3600)));
+            when(backupStorage.getCreationTime(BackupTier.DAILY, database, "backup3.zip"))
+                    .thenReturn(FileTime.from(now));
+
+            // act
+            retentionManager.applyRetention(BackupTier.DAILY, database);
+
+            // assert: все 3 файла удалены
+            verify(backupStorage).delete(eq(BackupTier.DAILY), eq(database), eq("backup1.zip"));
+            verify(backupStorage).delete(eq(BackupTier.DAILY), eq(database), eq("backup2.zip"));
+            verify(backupStorage).delete(eq(BackupTier.DAILY), eq(database), eq("backup3.zip"));
         }
     }
 }

@@ -95,6 +95,7 @@ class BackupTierPromoterTest {
 
             // assert
             verify(backupStorage).copy(eq(fileName), eq(fromTier), eq(toTier), eq(database));
+            verify(backupStorage).delete(eq(fromTier), eq(database), eq(fileName));
         }
 
         @Test
@@ -139,6 +140,7 @@ class BackupTierPromoterTest {
 
             // assert
             verify(backupStorage).copy(eq(newFile), eq(fromTier), eq(toTier), eq(database));
+            verify(backupStorage).delete(eq(fromTier), eq(database), eq(newFile));
             verify(backupStorage, never()).copy(eq(oldFile), any(), any(), any());
         }
 
@@ -178,6 +180,7 @@ class BackupTierPromoterTest {
 
             // assert
             verify(backupStorage, never()).copy(anyString(), any(), any(), any());
+            verify(backupStorage, never()).delete(any(), any(), any());
         }
 
         @Test
@@ -215,6 +218,7 @@ class BackupTierPromoterTest {
 
             // assert
             verify(backupStorage, never()).copy(anyString(), any(), any(), any());
+            verify(backupStorage, never()).delete(any(), any(), any());
         }
 
         @Test
@@ -260,6 +264,7 @@ class BackupTierPromoterTest {
 
             // assert
             verify(backupStorage).copy(eq(goodFile), eq(fromTier), eq(toTier), eq(database));
+            verify(backupStorage).delete(eq(fromTier), eq(database), eq(goodFile));
             verify(backupStorage, never()).copy(eq(badFile), any(), any(), any());
         }
 
@@ -306,6 +311,7 @@ class BackupTierPromoterTest {
 
             // assert
             verify(backupStorage).copy(eq(goodFile), eq(fromTier), eq(toTier), eq(database));
+            verify(backupStorage).delete(eq(fromTier), eq(database), eq(goodFile));
             verify(backupStorage, never()).copy(eq(badFile), any(), any(), any());
         }
     }
@@ -350,6 +356,7 @@ class BackupTierPromoterTest {
 
             // assert
             verify(backupStorage, never()).copy(anyString(), any(), any(), any());
+            verify(backupStorage, never()).delete(any(), any(), any());
         }
 
         @Test
@@ -369,6 +376,7 @@ class BackupTierPromoterTest {
 
             // assert
             verify(backupStorage, never()).copy(anyString(), any(), any(), any());
+            verify(backupStorage, never()).delete(any(), any(), any());
         }
 
         @Test
@@ -583,6 +591,35 @@ class BackupTierPromoterTest {
 
             // assert
             verify(backupStorage, never()).copy(anyString(), any(), any(), any());
+        }
+
+        @Test
+        @DisplayName("должен пропускать проверку статуса при checkStatus=false")
+        void promote_ShouldSkipStatusCheckWhenCheckStatusFalse() throws Exception {
+            // arrange
+            String database = "testdb";
+            BackupTier fromTier = BackupTier.WEEKLY;
+            BackupTier toTier = BackupTier.MONTHLY;
+            Period period = Period.ofDays(31);
+
+            String fileName = "backup-testdb-2026-06-19T10-00-00.zip";
+            when(backupStorage.list(fromTier, database))
+                    .thenReturn(List.of(fileName));
+
+            Instant now = Instant.now();
+            Instant createdTime = now.minusSeconds(3600);
+            when(backupStorage.getCreationTime(fromTier, database, fileName))
+                    .thenReturn(FileTime.from(createdTime));
+
+            // НЕ ставим stub для load/readReport — если checkStatus=false, они не должны вызываться
+
+            // act
+            promotionService.promote(database, fromTier, toTier, period, false);
+
+            // assert
+            verify(backupStorage).copy(eq(fileName), eq(fromTier), eq(toTier), eq(database));
+            verify(backupStorage).delete(eq(fromTier), eq(database), eq(fileName));
+            verify(backupFileReader, never()).readReport(any());
         }
 
         @Test
