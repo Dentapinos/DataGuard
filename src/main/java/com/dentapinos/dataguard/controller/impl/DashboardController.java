@@ -1,4 +1,4 @@
-package com.dentapinos.dataguard.controller.api;
+package com.dentapinos.dataguard.controller.impl;
 
 import com.dentapinos.dataguard.config.DashboardAuthProperties;
 import com.dentapinos.dataguard.dashboard.DashboardResponseDto;

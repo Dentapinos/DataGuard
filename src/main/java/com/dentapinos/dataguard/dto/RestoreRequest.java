@@ -4,6 +4,7 @@ import com.dentapinos.dataguard.enums.RestoreMode;
 import io.swagger.v3.oas.annotations.media.Schema;
 
 import java.util.List;
+import java.util.Map;
 
 /**
  * Запрос на восстановление в существующую базу данных.
@@ -35,5 +36,13 @@ public record RestoreRequest(
                 description = "Список имён таблиц для восстановления (если null или пустой — восстанавливаются все таблицы из бэкапа)",
                 example = "[\"users\", \"orders\"]"
         )
-        List<String> tables
+        List<String> tables,
+
+        @Schema(
+                description = "Значения по умолчанию для недостающих колонок. " +
+                        "Ключи — имена таблиц, значения — мапа имя_колонки → значение. " +
+                        "Поддерживаются функции-генераторы (#uuid, #now, #random_int) и статические значения.",
+                example = "{\"users\": {\"uuid\": \"#uuid\", \"created_at\": \"#now\", \"status\": \"ACTIVATED\"}}"
+        )
+        Map<String, Map<String, Object>> missingFields
 ) {}

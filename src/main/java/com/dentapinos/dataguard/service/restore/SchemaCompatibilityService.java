@@ -1,6 +1,8 @@
 package com.dentapinos.dataguard.service.restore;
 
 import com.dentapinos.dataguard.dto.DbCredentials;
+import com.dentapinos.dataguard.dto.MissingColumnWithDefault;
+import com.dentapinos.dataguard.dto.MissingColumnsAnalysisDto;
 import com.dentapinos.dataguard.dto.SchemaCompatibilityAnalysisDto;
 import com.dentapinos.dataguard.entity.ColumnMeta;
 import com.dentapinos.dataguard.entity.RestorePolicy;
@@ -13,6 +15,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -35,6 +38,7 @@ import java.util.stream.Collectors;
 public class SchemaCompatibilityService {
 
     private final DatabaseMetadataReader metadataService;
+    private final DefaultFunctionResolver functionResolver;
 
     /**
      * Анализирует совместимость схемы резервной копии с целевой базой данных.
@@ -275,5 +279,194 @@ public class SchemaCompatibilityService {
                 }
             }
         }
+    }
+
+    /**
+     * Анализирует недостающие колонки и генерирует подсказки для дефолтных значений.
+     * <p>
+     * Находит колонки, которые есть в целевой БД, но отсутствуют в бэкапе,
+     * и формирует список с подсказками для указания дефолтных значений.
+     * Пользователь может использовать эту информацию для ручной корректировки
+     * бэкапа или указания дефолтных значений перед повторным восстановлением.
+     * </p>
+     *
+     * @param dbCredentials     Учётные данные для подключения к целевой базе данных
+     * @param backup            Объект резервной копии с метаданными схемы
+     * @param targetDatabase    Имя целевой базы данных для анализа
+     * @return {@link MissingColumnsAnalysisDto} с списком недостающих колонок и подсказками
+     */
+    public MissingColumnsAnalysisDto generateMissingColumnsAnalysis(
+            DbCredentials dbCredentials,
+            BackupFile backup,
+            String targetDatabase
+    ) {
+        SchemaMeta backupSchema = backup.schema();
+
+        List<String> backupTableNames = backupSchema.tables().stream()
+                .map(TableMeta::name)
+                .toList();
+
+        SchemaMeta currentSchema = metadataService.readSchema(
+                dbCredentials,
+                targetDatabase,
+                backupTableNames
+        );
+
+        Map<String, TableMeta> currentByName = currentSchema.tables().stream()
+                .collect(Collectors.toMap(TableMeta::name, t -> t));
+
+        List<MissingColumnWithDefault> missingColumns = new ArrayList<>();
+        Map<String, Map<String, Object>> readyToUseMissingFields = new HashMap<>();
+
+        for (TableMeta backupTable : backupSchema.tables()) {
+            String tableName = backupTable.name();
+            TableMeta currentTable = currentByName.get(tableName);
+
+            if (currentTable != null) {
+                analyzeMissingColumns(backupTable, currentTable, missingColumns, readyToUseMissingFields);
+            }
+        }
+
+        int tableCount = (int) missingColumns.stream()
+                .map(MissingColumnWithDefault::tableName)
+                .distinct()
+                .count();
+
+        String instructions = "Для каждой колонки укажите значение по умолчанию. " +
+                "Если колонка nullable=true, можно указать NULL. " +
+                "Если колонка NOT NULL без DEFAULT, необходимо указать подходящее значение. " +
+                "После корректировки бэкапа выполните повторный запрос на восстановление.";
+
+        return new MissingColumnsAnalysisDto(
+                missingColumns,
+                tableCount,
+                missingColumns.size(),
+                instructions,
+                readyToUseMissingFields,
+                functionResolver.getAvailableFunctions()
+        );
+    }
+
+    /**
+     * Внутренний метод для анализа недостающих колонок в конкретной таблице.
+     *
+     * @param backupTable                Таблица из резервной копии
+     * @param currentTable               Соответствующая таблица в целевой базе данных
+     * @param missingColumns             Список для добавления недостающих колонок
+     * @param readyToUseMissingFields    Мапа для готового шаблона missingFields
+     */
+    private void analyzeMissingColumns(
+            TableMeta backupTable,
+            TableMeta currentTable,
+            List<MissingColumnWithDefault> missingColumns,
+            Map<String, Map<String, Object>> readyToUseMissingFields
+    ) {
+        String tableName = backupTable.name();
+
+        Map<String, ColumnMeta> backupCols = backupTable.columns().stream()
+                .collect(Collectors.toMap(ColumnMeta::name, c -> c));
+        Map<String, ColumnMeta> currentCols = currentTable.columns().stream()
+                .collect(Collectors.toMap(ColumnMeta::name, c -> c));
+
+        // Находим колонки, которые есть в целевой БД, но нет в бэкапе
+        for (String colName : currentCols.keySet()) {
+            if (!backupCols.containsKey(colName)) {
+                ColumnMeta currentCol = currentCols.get(colName);
+                String hint = generateDefaultValueHint(tableName, colName, currentCol);
+                
+                missingColumns.add(new MissingColumnWithDefault(
+                        tableName,
+                        colName,
+                        currentCol.type(),
+                        currentCol.nullable(),
+                        hint
+                ));
+
+                // Добавляем в готовый шаблон с пустым значением по умолчанию
+                readyToUseMissingFields
+                        .computeIfAbsent(tableName, k -> new HashMap<>())
+                        .put(colName, getDefaultValueForType(currentCol.type(), currentCol.nullable()));
+            }
+        }
+    }
+
+    /**
+     * Генерирует подсказку для указания дефолтного значения колонки.
+     *
+     * @param tableName  Имя таблицы
+     * @param colName    Имя колонки
+     * @param colMeta    Метаданные колонки
+     * @return Текст подсказки
+     */
+    private String generateDefaultValueHint(
+            String tableName,
+            String colName,
+            ColumnMeta colMeta
+    ) {
+        StringBuilder hint = new StringBuilder();
+        hint.append("Колонка '").append(colName).append("' типа ").append(colMeta.type());
+        
+        if (colMeta.autoIncrement()) {
+            hint.append(", автоинкремент. Для таких колонок обычно не нужно указывать значение — они генерируются автоматически.");
+        } else if (colMeta.nullable()) {
+            hint.append(", может содержать NULL. Можно указать NULL или подходящее значение по умолчанию.");
+        } else {
+            hint.append(", NOT NULL. Необходимо указать значение по умолчанию для этой колонки.");
+        }
+        
+        hint.append(" (таблица: ").append(tableName).append(")");
+        
+        return hint.toString();
+    }
+
+    /**
+     * Определяет значение по умолчанию на основе типа колонки.
+     *
+     * @param columnType тип колонки (например, "varchar(255)", "datetime(6)", "enum('ACTIVATED','EXPIRED')")
+     * @param nullable   может ли колонка содержать NULL
+     * @return значение по умолчанию (пустая строка для строк, 0 для чисел, false для булевых)
+     */
+    private Object getDefaultValueForType(String columnType, boolean nullable) {
+        if (nullable) {
+            return null;
+        }
+
+        String lowerType = columnType.toLowerCase();
+
+        // Числовые типы
+        if (lowerType.startsWith("int") || lowerType.startsWith("bigint") || 
+            lowerType.startsWith("smallint") || lowerType.startsWith("tinyint") ||
+            lowerType.startsWith("double") || lowerType.startsWith("float") ||
+            lowerType.startsWith("decimal") || lowerType.startsWith("numeric")) {
+            return 0;
+        }
+
+        // Булевый тип
+        if (lowerType.startsWith("bool")) {
+            return false;
+        }
+
+        // Date/time типы
+        if (lowerType.startsWith("date") || lowerType.startsWith("time") || 
+            lowerType.startsWith("datetime") || lowerType.startsWith("timestamp")) {
+            return "";
+        }
+
+        // Enum типы - берём первый элемент
+        if (lowerType.startsWith("enum")) {
+            int firstParen = columnType.indexOf('(');
+            if (firstParen != -1) {
+                String enumValues = columnType.substring(firstParen + 1, columnType.lastIndexOf(')'));
+                String[] values = enumValues.split(",");
+                if (values.length > 0) {
+                    // Убираем кавычки из первого значения
+                    return values[0].trim().replaceAll("'", "");
+                }
+            }
+            return "";
+        }
+
+        // Строковые типы (varchar, text, char и т.д.)
+        return "";
     }
 }

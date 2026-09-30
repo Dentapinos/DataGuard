@@ -48,6 +48,7 @@ public class RestoreService {
     private final BackupFileReader backupFileReader;
     private final SchemaCompatibilityService schemaCompatibilityService;
     private final RestoreOrderService restoreOrderService;
+    private final DefaultFunctionResolver functionResolver;
 
     /**
      * <p>Восстанавливает данные в существующую базу данных из указанного бэкапа.
@@ -55,7 +56,7 @@ public class RestoreService {
      * Шаги:
      *  1) Фиксация времени начала.
      *  2) Загрузка полного бэкапа.
-     *  3) Определение политики восстановления в зависимости от режима.
+     *  3) Определение полит��ки восстановления в зависимости от режима.
      *  4) Проверка / корректировка схемы целевой БД под импорт.
      *  5) Фильтрация таблиц (если указаны).
      *  6) Определение порядка восстановления таблиц на основе графа зависимостей.
@@ -77,6 +78,37 @@ public class RestoreService {
             String targetDatabase,
             RestoreMode mode,
             List<String> tables
+    ) {
+        return restoreToExistingDatabase(dbCredentials, tier, backupName, targetDatabase, mode, tables, null);
+    }
+
+    /**
+     * <p>Восстанавливает данные в существующую базу данных из указанного бэкапа
+     * с применением значений по умолчанию для недостающих колонок.
+     * </p>
+     * <p>
+     * Метод аналогичен {@link #restoreToExistingDatabase(DbCredentials, BackupTier, String, String, RestoreMode, List)},
+     * но дополнительно применяет значения из {@code missingFields} для колонок,
+     * которые есть в целевой БД, но отсутствуют в бэкапе.
+     * </p>
+     *
+     * @param dbCredentials   учетные данные подключения к целевой БД
+     * @param tier            уровень (слой) бэкапа
+     * @param backupName      имя бэкап‑файла
+     * @param targetDatabase  имя целевой базы данных
+     * @param mode            режим восстановления
+     * @param tables          список таблиц для восстановления
+     * @param missingFields   мапа {таблица -> {колонка -> значение_по_умолчанию}}
+     * @return RestoreReport - подробный отчёт о выполненном восстановлении
+     */
+    public RestoreReport restoreToExistingDatabase(
+            DbCredentials dbCredentials,
+            BackupTier tier,
+            String backupName,
+            String targetDatabase,
+            RestoreMode mode,
+            List<String> tables,
+            Map<String, Map<String, Object>> missingFields
     ) {
 
         // === 3. Определяем политику восстановления на основе режима (RestoreMode) ===
@@ -120,6 +152,12 @@ public class RestoreService {
         log.debug("[TABLE_FILTER] Фильтрация таблиц: originalTables={}, filteredTables={}",
                 backupFile.data().size(), filteredBackup.data().size());
 
+        // === 3.6. Применение значений по умолчанию для недостающих колонок ===
+        BackupFile backupWithDefaults = applyMissingFieldsDefaults(filteredBackup, missingFields);
+        if (missingFields != null && !missingFields.isEmpty()) {
+            log.info("[MISSING_FIELDS] Применены значения по умолчанию для {} таблиц", missingFields.size());
+        }
+
         // === 3.5. Проверка совместимости схемы бэкапа и целевой БД ===
         log.info("[SCHEMA_CHECK] Проверка совместимости схемы бэкапа '{}' с целевой БД '{}'", backupFile.database(), targetDatabase);
         try {
@@ -156,7 +194,7 @@ public class RestoreService {
 
         // === 5.1. Обработка таблиц, которые запрошены, но отсутствуют в бэкапе ===.
         // Подсчитываем таблицы, которые есть в списке tables, но нет в filteredBackup.data()
-        Map<String, List<Map<String, Object>>> backupData = filteredBackup.data();
+        Map<String, List<Map<String, Object>>> backupData = backupWithDefaults.data();
         int tablesMissingInBackup = 0;
         if (tables != null && !tables.isEmpty()) {
             for (String tableName : tables) {
@@ -176,7 +214,7 @@ public class RestoreService {
         try {
             strategy.restore(
                     dbCredentials,
-                    filteredBackup,
+                    backupWithDefaults,
                     targetDatabase,
                     policy,
                     stats, backupName
@@ -238,6 +276,73 @@ public class RestoreService {
             status = RestoreStatus.FAILED;
         }
         return status;
+    }
+
+    /**
+     * Применяет значения по умолчанию для недостающих колонок к данным бэкапа.
+     * <p>
+     * Для каждой строки в указанных таблицах добавляет недостающие поля
+     * с указанными значениями по умолчанию. Если колонка уже есть в строке —
+     * значение не перезаписывается.
+     * </p>
+     *
+     * @param backup        бэкап с данными для восстановления
+     * @param missingFields мапа {таблица -> {колонка -> значение_по_умолчанию}}
+     * @return новый BackupFile с дополненными данными
+     */
+    private BackupFile applyMissingFieldsDefaults(
+            BackupFile backup,
+            Map<String, Map<String, Object>> missingFields
+    ) {
+        if (missingFields == null || missingFields.isEmpty()) {
+            return backup;
+        }
+
+        Map<String, List<Map<String, Object>>> newData = new java.util.HashMap<>();
+        boolean anyChanges = false;
+
+        for (Map.Entry<String, List<Map<String, Object>>> tableEntry : backup.data().entrySet()) {
+            String tableName = tableEntry.getKey();
+            List<Map<String, Object>> rows = tableEntry.getValue();
+            Map<String, Object> tableDefaults = missingFields.get(tableName);
+
+            if (tableDefaults == null || tableDefaults.isEmpty()) {
+                // Нет дефолтов для этой таблицы — копируем как есть
+                newData.put(tableName, rows);
+            } else {
+                // Применяем дефолты к каждой строке
+                List<Map<String, Object>> modifiedRows = new java.util.ArrayList<>();
+                for (Map<String, Object> row : rows) {
+                    Map<String, Object> newRow = new java.util.HashMap<>(row);
+                    for (Map.Entry<String, Object> field : tableDefaults.entrySet()) {
+                        String columnName = field.getKey();
+                        Object defaultValue = field.getValue();
+                        // Добавляем только если колонка отсутствует в строке
+                        if (!newRow.containsKey(columnName)) {
+                            // Разрешаем плейсхолдеры (например, #uuid, #now)
+                            Object resolvedValue = functionResolver.resolve(defaultValue);
+                            newRow.put(columnName, resolvedValue);
+                            anyChanges = true;
+                        }
+                    }
+                    modifiedRows.add(newRow);
+                }
+                newData.put(tableName, modifiedRows);
+            }
+        }
+
+        if (!anyChanges) {
+            return backup;
+        }
+
+        log.debug("[MISSING_FIELDS] Применены дефолты для таблиц: {}", missingFields.keySet());
+        return new BackupFile(
+                backup.database(),
+                backup.engine(),
+                backup.schema(),
+                newData,
+                backup.tableOrder()
+        );
     }
 
 

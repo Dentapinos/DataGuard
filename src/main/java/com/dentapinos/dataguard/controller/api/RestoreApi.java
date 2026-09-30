@@ -2,6 +2,7 @@ package com.dentapinos.dataguard.controller.api;
 
 
 import com.dentapinos.dataguard.dto.AnalyzeSchemaRequest;
+import com.dentapinos.dataguard.dto.MissingColumnsAnalysisDto;
 import com.dentapinos.dataguard.dto.RestoreRequest;
 import com.dentapinos.dataguard.dto.RestoreToNewDatabaseRequest;
 import com.dentapinos.dataguard.dto.SchemaCompatibilityAnalysisDto;
@@ -18,107 +19,66 @@ import org.springframework.web.bind.annotation.*;
 
 @Tag(
         name = "Restore",
-        description = "Восстановление резервных копий и анализ схемы"
+        description = "API для восстановления резервных копий MySQL. Восстановление в существующие и новые БД, анализ схемы, обработка недостающих колонок."
 )
 @RequestMapping("/api/restore")
 public interface RestoreApi {
 
     @Operation(
-            summary = "🔄️ Восстановление в существующую базу данных",
+            summary = "Восстановление в существующую базу данных",
             description = """
-                    Запускает восстановление из указанного бэкапа в существующую целевую базу данных.
-                    Логическое имя базы и физическое имя целевой базы передаются в теле запроса.
-                    
-                    <h3>Параметры запроса</h3>
-                    <ul>
-                      <li><strong>tier</strong> (query) — уровень хранения бэкапа (DAILY, WEEKLY, MONTHLY и т.п.)</li>
-                    </ul>
-                    
-                    <h3>Параметры тела запроса (RestoreRequest)</h3>
-                    <ul>
-                      <li><strong>targetDatabase</strong> — логическое имя целевой базы из конфигурации</li>
-                      <li><strong>backupName</strong> — имя файла бэкапа</li>
-                      <li><strong>mode</strong> — режим восстановления (см. ниже)</li>
-                      <li><strong>tables</strong> — список таблиц для восстановления (если null или пустой — все таблицы)</li>
-                    </ul>
-                    
-                    <h3>Режимы восстановления</h3>
-                    <table border="1" style="border-collapse: collapse; width: 100%;">
-                      <thead>
-                        <tr style="background-color: #f0f0f0;">
-                          <th style="padding: 8px; text-align: left; white-space: nowrap;">Режим</th>
-                          <th style="padding: 8px; text-align: left;">Тип</th>
-                          <th style="padding: 8px; text-align: left;">Что делает</th>
-                          <th style="padding: 8px; text-align: left;">Когда применять</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        <tr>
-                          <td style="padding: 8px; font-weight: bold;">STRICT</td>
-                          <td style="padding: 8px;">⚡ Модификация</td>
-                          <td style="padding: 8px;">Строгая проверка схемы и данных, ошибка на любом расхождении</td>
-                          <td style="padding: 8px;">Полная гарантия совпадения схемы и данных</td>
-                        </tr>
-                        <tr>
-                          <td style="padding: 8px; font-weight: bold;">SAFE_MERGE</td>
-                          <td style="padding: 8px;">🌱 Модификация</td>
-                          <td style="padding: 8px;">Мягкое слияние, пропуск дубликатов, FK отключаются</td>
-                          <td style="padding: 8px;">Безопасное добавление данных без конфликтов</td>
-                        </tr>
-                        <tr>
-                          <td style="padding: 8px; font-weight: bold;">FORCE_REPLACE</td>
-                          <td style="padding: 8px;">💥 Модификация</td>
-                          <td style="padding: 8px;">Агрессивная замена данных, дубликаты обновляются</td>
-                          <td style="padding: 8px;">Полная перезапись данных из бэкапа</td>
-                        </tr>
-                        <tr>
-                          <td style="padding: 8px; font-weight: bold;">APPEND_ONLY</td>
-                          <td style="padding: 8px;">📝 Модификация</td>
-                          <td style="padding: 8px;">Только добавление новых строк, существующие не трогаются</td>
-                          <td style="padding: 8px;">Добавление новых данных без изменения существующих</td>
-                        </tr>
-                        <tr>
-                          <td style="padding: 8px; font-weight: bold;">UPSERT_ALL</td>
-                          <td style="padding: 8px;">🔄 Модификация</td>
-                          <td style="padding: 8px;">Upsert-операции для всех строк, дубликаты обновляются</td>
-                          <td style="padding: 8px;">Обновление существующих и добавление новых записей</td>
-                        </tr>
-                        <tr>
-                          <td style="padding: 8px; font-weight: bold;">DRY_RUN</td>
-                          <td style="padding: 8px;">👁️ Только просмотр</td>
-                          <td style="padding: 8px;">Эмуляция восстановления без записи в БД</td>
-                          <td style="padding: 8px;">Тестирование процесса без реальных изменений</td>
-                        </tr>
-                        <tr>
-                          <td style="padding: 8px; font-weight: bold;">SAFE_SCHEMA_CHECK</td>
-                          <td style="padding: 8px;">👁️ Только просмотр</td>
-                          <td style="padding: 8px;">Только проверка совместимости схемы без импорта</td>
-                          <td style="padding: 8px;">Проверка совместимости перед восстановлением</td>
-                        </tr>
-                      </tbody>
-                    </table>
-                    
-                    <h3>Фильтрация таблиц</h3>
-                    <p>Поле <code>tables</code> в запросе позволяет указать список таблиц для восстановления:
-                    <ul>
-                      <li><strong>Если <code>tables = null</code> или пустой список</strong> — восстанавливаются все таблицы из бэкапа</li>
-                      <li><strong>Если указан список таблиц</strong> — восстанавливаются только указанные таблицы</li>
-                    </ul></p>
-                    
-                    <h3>Пример запроса</h3>
-                    <pre>
-                    {
-                      "targetDatabase": "main_db",
-                      "backupName": "backup_20240614_120000.zip",
-                      "mode": "SAFE_MERGE",
-                      "tables": ["users", "orders"]
-                    }
-                    </pre>
-                    
-                    <h3>Возвращает</h3>
-                    <ul>
-                      <li>RestoreReport с деталями выполненного восстановления</li>
-                    </ul>
+                    Загружает бэкап (ZIP-архив с JSON) и импортирует данные в указанную целевую базу данных.
+
+                    Типичный рабочий процесс:
+                    </br>1. Анализ схемы — сначала вызовите POST /{databaseName}/missing-columns-analysis
+                    </br>2. Укажите дефолты — если есть недостающие колонки, заполните missingFields
+                    </br>3. Восстановление — вызовите этот endpoint с выбранным режимом
+
+                    Параметры:
+                    </br>tier (query) — уровень хранения: DAILY, WEEKLY, MONTHLY
+                    </br>targetDatabase (body) — логическое имя БД из конфигурации
+                    </br>backupName (body) — имя ZIP-файла бэкапа
+                    </br>mode (body) — режим восстановления (см. ниже)
+                    </br>tables (body, опционально) — список таблиц для восстановления. Если null/пусто — все таблицы
+                    </br>missingFields (body, опционально) — значения по умолчанию для недостающих колонок
+
+                    Режимы восстановления:
+                    </br><b>STRICT</b> — требует полного совпадения схемы. Бросает ошибку при любом расхождении.
+                    </br><b>SAFE_MERGE</b> — мягкое слияние: пропускает дубликаты. Отключает внешние ключи.
+                    </br><b>FORCE_REPLACE</b> — полная перезапись: обновляет существующие записи по первичному ключу.
+                    </br><b>APPEND_ONLY</b> — только вставка новых строк. Существующие игнорируются.
+                    </br><b>UPSERT_ALL</b> — объединяет вставку и обновление. Рекомендуется для большинства сценариев.
+                    </br><b>DRY_RUN</b> — эмуляция без записи в БД. Используйте для тестирования.
+                    </br><b>SAFE_SCHEMA_CHECK</b> — только проверка совместимости схемы. Данные не восстанавливаются.
+
+                    Недостающие колонки: если в целевой БД есть колонки, которых нет в бэкапе, восстановление может не сработать для NOT NULL колонок без значений по умолчанию.
+
+                    Решение:
+                    </br>1. Вызовите POST /{databaseName}/missing-columns-analysis
+                    </br>2. Скопируйте readyToUseMissingFields из ответа
+                    </br>3. Заполните значения и передайте в missingFields
+                    </br>4. Выполните восстановление
+
+                    Функции-генераторы (начинаются с #):
+                    </br><b>#uuid</b> — уникальный UUID v4 для каждой строки
+                    </br><b>#uuid_nodash</b>  — UUID без дефисов
+                    </br><b>#now</b>  — текущая дата и время (формат MySQL)
+                    </br><b>#unix_timestamp</b>  — Unix timestamp
+                    </br><b>#random_int</b>  — случайное целое число
+                    </br><b>#random_long</b>  — случайное длинное число
+                    </br><b>#random_bool</b>  — случайное boolean
+                    </br><b>#random_pin_4</b>  — случайный PIN из 4 цифр
+                    </br><b>#random_pin_6</b>  — случайный PIN из 6 цифр
+                    </br><b>#random_string</b>  — случайная строка (8 символов)
+                    </br><b>#random_string_16</b>  — случайная строка (16 символов)
+                    </br><b>#random_string_32</b>  — случайная строка (32 символа)
+                    </br><b>#random_email</b>  — случайный email адрес
+                    </br><b>#random_name</b>  — случайное имя
+                    </br><b>#random_ip</b>  — случайный IPv4 адрес
+                    </br><b>#random_hash</b>  — случайный hex-хеш (32 символа)
+                    </br><b>#random_hash_64</b>  — случайный hex-хеш (64 символа)
+
+                    Возвращает: RestoreReport с деталями восстановления: статус, статистика по таблицам и строкам.
                     """
     )
     @ApiResponse(
@@ -135,40 +95,11 @@ public interface RestoreApi {
     );
 
     @Operation(
-            summary = "🧩🧩🔍 Анализ совместимости схемы перед восстановлением",
+            summary = "Анализ совместимости схемы перед восстановлением",
             description = """
-                    Выполняет предварительный анализ совместимости схемы целевой базы данных
-                    с выбранным бэкапом. Ничего в целевой БД не изменяет.
-                    
-                    <h3>Параметры запроса</h3>
-                    <ul>
-                      <li><strong>databaseName</strong> (path) — логическое имя целевой базы из конфигурации</li>
-                      <li><strong>tier</strong> (query) — уровень хранения бэкапа (DAILY, WEEKLY, MONTHLY и т.п.)</li>
-                    </ul>
-                    
-                    <h3>Параметры тела запроса (AnalyzeSchemaRequest)</h3>
-                    <ul>
-                      <li><strong>backupName</strong> — имя файла бэкапа для анализа</li>
-                      <li><strong>targetDatabase</strong> — физическое имя целевой базы данных</li>
-                    </ul>
-                    
-                    <h3>Пример запроса</h3>
-                    <pre>
-                    {
-                      "backupName": "backup_20240614_120000.zip",
-                      "targetDatabase": "production_db"
-                    }
-                    </pre>
-                    
-                    <h3>Возвращает</h3>
-                    <ul>
-                      <li>SchemaCompatibilityAnalysisDto с результатами анализа:</li>
-                      <ul>
-                        <li>Список отсутствующих таблиц</li>
-                        <li>Список несовпадающих схем</li>
-                        <li>Общую совместимость (COMPATIBLE/INCOMPATIBLE)</li>
-                      </ul>
-                    </ul>
+                    <p>Сравнивает схему бэкапа со схемой целевой БД. НЕ изменяет БД.</p>
+                    <p><b>Когда использовать:</b> перед восстановлением для проверки совместимости, для отладки ошибок восстановления, для планирования синхронизации схем.</p>
+                    <p><b>Возвращает:</b> <code>compatibleStrict</code> (true если схемы идентичны), <code>compatibleRelaxed</code> (true для RELAXED режима), <code>blockingIssuesStrict</code>, <code>warnings</code>.</p>
                     """
     )
     @ApiResponse(
@@ -190,53 +121,23 @@ public interface RestoreApi {
     );
 
     @Operation(
-            summary = "🌱🗄️ Восстановление в новую базу данных",
+            summary = "Восстановление в новую базу данных",
             description = """
-                    Создаёт новую базу данных и восстанавливает в неё данные из бэкапа.
-                    Требует передачи полных учетных данных для новой базы.
-                    
-                    <h3>Параметры запроса</h3>
-                    <ul>
-                      <li><strong>tier</strong> (query) — уровень хранения бэкапа (DAILY, WEEKLY, MONTHLY и т.п.)
-                      (если не указан, уровень будет определен автоматически)</li>
-                    </ul>
-                    
-                    <h3>Параметры тела запроса (RestoreToNewDatabaseRequest)</h3>
-                    <ul>
-                      <li><strong>backupName</strong> — имя файла бэкапа для восстановления</li>
-                      <li><strong>newDatabaseName</strong> — имя создаваемой базы данных</li>
-                      <li><strong>newDatabaseCredentials</strong> — учетные данные для новой базы:</li>
-                      <ul>
-                        <li><strong>url</strong> — JDBC URL новой базы</li>
-                        <li><strong>username</strong> — имя пользователя</li>
-                        <li><strong>password</strong> — пароль</li>
-                      </ul>
-                    </ul>
-                    
-                    <h3>Пример запроса</h3>
-                    <pre>
-                    {
-                      "backupName": "backup_20240614_120000.zip",
-                      "newDatabaseName": "restored_db",
-                      "newDatabaseCredentials": {
-                        "url": "jdbc:mysql://localhost:3306/restored_db",
-                        "username": "root",
-                        "password": "password123"
-                      }
-                    }
-                    </pre>
-                    
-                    <h3>Возвращает</h3>
-                    <ul>
-                      <li>RestoreReport с деталями выполненного восстановления</li>
-                    </ul>
-                    
-                    <h3>Важно</h3>
-                    <ul>
-                      <li>Если база с таким именем уже существует — будет ошибка</li>
-                      <li>Восстановление выполняется в режиме STRICT (строго)</li>
-                      <li>Восстанавливаются все таблицы из бэкапа</li>
-                    </ul>
+                    Полностью пересоздаёт базу данных на основе бэкапа.
+
+                    Что происходит:
+                    </br>1. Старая база данных (если существует) полностью удаляется
+                    </br>2. Создаётся чистая база данных
+                    </br>3. Создаётся схема таблиц из бэкапа
+                    </br>4. Восстанавливаются все данные из бэкапа
+
+                    Важно:
+                    </br>• База данных пересоздаётся с нуля — все текущие данные будут потеряны
+                    </br>• Схема берётся из бэкапа — не требуется совпадения с текущей схемой
+                    </br>• Восстанавливаются все таблицы из бэкапа (фильтрация недоступна)
+                    </br>• Возвращает 409, если указанные учётные данные некорректны или нет прав на создание БД
+
+                    Возвращает: RestoreReport с деталями восстановления.
                     """
     )
     @ApiResponse(
@@ -254,5 +155,44 @@ public interface RestoreApi {
     ResponseEntity<?> restoreToNewDatabase(
             @Parameter(description = "Уровень хранения бэкапа (DAILY, WEEKLY, MONTHLY и т.п.)", example = "DAILY") @RequestParam(required = false) BackupTier tier,
             @RequestBody RestoreToNewDatabaseRequest request
+    );
+
+    @Operation(
+            summary = "Анализ недостающих колонок и генерация дефолтов",
+            description = """
+                    <p>Находит колонки в целевой БД, которых нет в бэкапе. НЕ изменяет БД.</p>
+                    <p><b>Зачем нужно:</b> если в таблицу БД добавились новые поля после создания бэкапа, восстановление может не сработать для NOT NULL колонок без значений по умолчанию.</p>
+                    <p><b>Возвращает:</b></p>
+                    <ul>
+                      <li><code>missingColumns</code> — список недостающих колонок с подсказками</li>
+                      <li><code>readyToUseMissingFields</code> — готовый шаблон для вставки в <code>missingFields</code> запроса восстановления</li>
+                      <li><code>availableFunctions</code> — список функций-генераторов (#uuid, #now и т.д.)</li>
+                      <li><code>userInstructions</code> — рекомендации по использованию</li>
+                    </ul>
+                    <p><b>Рабочий процесс:</b></p>
+                    <ol>
+                      <li>Вызовите этот endpoint с вашим бэкапом и целевой БД</li>
+                      <li>Скопируйте <code>readyToUseMissingFields</code> из ответа</li>
+                      <li>Вставьте в запрос восстановления как <code>missingFields</code></li>
+                      <li>При необходимости замените плейсхолдеры (#uuid, #now) на свои значения</li>
+                    </ol>
+                    """
+    )
+    @ApiResponse(
+            responseCode = "200",
+            description = "Анализ выполнен успешно",
+            content = @Content(schema = @Schema(implementation = MissingColumnsAnalysisDto.class))
+    )
+    @ApiResponse(responseCode = "404", description = "Логическая база данных не найдена")
+    @ApiResponse(responseCode = "500", description = "Ошибка при анализе")
+    @PostMapping(
+            value = "/{databaseName}/missing-columns-analysis",
+            consumes = "application/json",
+            produces = "application/json"
+    )
+    ResponseEntity<?> analyzeMissingColumns(
+            @Parameter(description = "Логическое имя базы данных из конфигурации", example = "production_db") @PathVariable String databaseName,
+            @Parameter(description = "Уровень хранения бэкапа (DAILY, WEEKLY, MONTHLY и т.п.)", example = "DAILY") @RequestParam BackupTier tier,
+            @RequestBody AnalyzeSchemaRequest request
     );
 }

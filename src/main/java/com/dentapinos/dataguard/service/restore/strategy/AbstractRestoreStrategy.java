@@ -203,9 +203,11 @@ public abstract class AbstractRestoreStrategy implements RestoreStrategy {
     }
 
     /**
-     * Возвращает список колонок, которые присутствуют как в целевой таблице,
-     * так и в строках данных бэкапа (на основе первой строки).
-     * Если строк нет — возвращает пустой список.
+     * Возвращает список колонок для вставки.
+     * <p>
+     * Для UPSERT_ALL (OVERWRITE_ON_CONFLICT) включаем все колонки из целевой таблицы,
+     * чтобы ON DUPLICATE KEY UPDATE работал корректно.
+     * Для остальных стратегий — только колонки из бэкапа.
      */
     protected List<String> filterInsertColumns(TableMeta currentTable, List<Map<String, Object>> rows) {
         List<String> targetColumns = currentTable.columns().stream()
@@ -213,16 +215,12 @@ public abstract class AbstractRestoreStrategy implements RestoreStrategy {
                 .toList();
 
         if (rows == null || rows.isEmpty()) {
-            return List.of();
+            return targetColumns;
         }
 
-        // Для FORCE_REPLACE используем все доступные колонки из целевой таблицы
-        // которые есть в данных бэкапа
-        return rows.stream()
-                .flatMap(row -> row.keySet().stream())
-                .distinct() // уникальные имена колонок
-                .filter(targetColumns::contains)
-                .toList();
+        // Для OVERWRITE_ON_CONFLICT (UPSERT_ALL) включаем все колонки
+        // чтобы ON DUPLICATE KEY UPDATE не падал на колонки без DEFAULT
+        return targetColumns;
     }
 
     public void handleBatchResult(int count,
@@ -241,7 +239,11 @@ public abstract class AbstractRestoreStrategy implements RestoreStrategy {
                 inc(stats.getRowsPerTableUpdated(), tableName);
             }
         } else if (rowPolicy == RowConflictPolicy.SKIP_ON_CONFLICT) {
-            // INSERT IGNORE: 1 = INSERT, 0 = skipped
+            // INSERT IGNORE: MySQL JDBC драйвер возвращает:
+            // - 1 = строка вставлена
+            // - 0 = строка пропущена (дубликат) или драйвер без rewriteBatchedStatements=true
+            // Без rewriteBatchedStatements=true драйвер всегда возвращает 0
+            // Считаем 0 как пропущенную строку (дубликат)
             if (count == 1) {
                 stats.setRowsInserted(stats.getRowsInserted() + 1);
                 inc(stats.getRowsPerTableInserted(), tableName);

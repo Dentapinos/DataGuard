@@ -96,6 +96,23 @@ public class MySqlSchemaCreateService implements DatabaseSchemaCreator{
         }
     }
 
+    @Override
+    public void dropDatabaseIfExists(DbCredentials dbCredentials, String dbName) {
+        try (JdbcTemplateFactory.JdbcConnection conn = jdbcTemplateFactory.createServerConnection(dbCredentials)) {
+            JdbcTemplate jdbcTemplate = conn.getJdbcTemplate();
+
+            try {
+                String safeDbName = dbName.replace("`", "``");
+                String sql = "DROP DATABASE IF EXISTS `" + safeDbName + "`";
+                jdbcTemplate.execute(sql);
+                log.info("[RESTORE] Старая база данных '{}' успешно удалена (если существовала)", dbName);
+            } catch (Exception e) {
+                log.warn("[RESTORE] Не удалось удалить базу данных '{}': {}", dbName, e.getMessage());
+                // Не выбрасываем исключение — если не удалось удалить, дальше упадёт при создании
+            }
+        }
+    }
+
     private String buildCreateTable(TableMeta table) {
         StringBuilder sb = new StringBuilder();
         sb.append("CREATE TABLE `").append(table.name()).append("` (\n");

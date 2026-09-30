@@ -54,4 +54,16 @@ public interface DatabaseSchemaCreator {
      *                               недостаточные привилегии и т.д.)
      */
     void createTables(DbCredentials credentials, String dbName, SchemaMeta schema);
+
+    /**
+     * Удаляет базу данных, если она существует.
+     * <p>
+     * Если база данных не существует, метод завершается успешно без действий.
+     * ВСЕ ДАННЫЕ БУДУТ УДАЛЕНЫ БЕЗ ВОЗМОЖНОСТИ ВОССТАНОВЛЕНИЯ!
+     * </p>
+     *
+     * @param credentials Учётные данные для подключения к серверу баз данных
+     * @param dbName      Имя удаляемой базы данных
+     */
+    void dropDatabaseIfExists(DbCredentials credentials, String dbName);
 }

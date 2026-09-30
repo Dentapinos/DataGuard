@@ -71,7 +71,8 @@ public class RestoreController implements RestoreApi {
                 request.backupName(),
                 request.targetDatabase(),
                 request.mode(),
-                request.tables()
+                request.tables(),
+                request.missingFields()
         );
         return ResponseEntity.ok(report);
     }
@@ -136,13 +137,20 @@ public class RestoreController implements RestoreApi {
             // 1. Загрузка бэкапа
             BackupFile backup = loadBackup(parseDatabaseName, request.backupName(), tier);
 
-            // 2. Создание новой БД
-            databaseSchemaCreator.createDatabaseIfNotExistsElseException(
+            // 2. Полное пересоздание базы данных
+            // Удаляем старую базу (если существует)
+            databaseSchemaCreator.dropDatabaseIfExists(
                     request.newDatabaseCredentials(),
                     request.newDatabaseName()
             );
 
-            // 3. Создание таблиц
+            // Создаём чистую базу данных
+            databaseSchemaCreator.createDatabaseIfNotExists(
+                    request.newDatabaseCredentials(),
+                    request.newDatabaseName()
+            );
+
+            // 3. Создание таблиц из схемы бэкапа
             databaseSchemaCreator.createTables(
                     request.newDatabaseCredentials(),
                     request.newDatabaseName(),
@@ -166,7 +174,7 @@ public class RestoreController implements RestoreApi {
                     request.newDatabaseName(), request.backupName(), e);
             return ResponseEntity.status(HttpStatus.CONFLICT).body(new ApiErrorResponse(
                     e.getMessage(),
-                    "Ошибка при попытке восстановить данные в новую базу данных ["+request.newDatabaseName()+"], которая уже существует"
+                    "Ошибка при попытке пересоздать базу данных ["+request.newDatabaseName()+"] — проверьте учётные данные и права доступа"
             ));
         } catch (Exception e) {
             log.error("[AD_HOC_RESTORE_NEW_DB] Ошибка восстановления в новую базу данных: newDb={}, backupName={}",
@@ -179,6 +187,55 @@ public class RestoreController implements RestoreApi {
     private BackupFile loadBackup(String databaseName, String backupName, BackupTier tier) throws IOException {
         try (InputStream is = backupStorage.load(tier, databaseName, backupName)) {
             return backupFileReader.readBackupFile(is);
+        }
+    }
+
+    /**
+     * Анализ недостающих колонок с подсказками для дефолтных значений.
+     * Ничего в целевой БД не меняет.
+     */
+    @Override
+    public ResponseEntity<?> analyzeMissingColumns(
+            String databaseName,
+            BackupTier tier,
+            AnalyzeSchemaRequest request
+    ) {
+
+        DbCredentials credentials;
+        try {
+            credentials = databaseConfigResolver.resolveCredentials(databaseName);
+            if (!databaseName.equals(request.targetDatabase())) {
+                // проверка доступа к целевой бд
+                databaseConfigResolver.resolveCredentials(request.targetDatabase());
+            }
+        } catch (IllegalArgumentException ex) {
+            log.warn("[MISSING_COLUMNS_ANALYSIS] {}", ex.getMessage());
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(ex.getMessage());
+        }
+
+        log.info("[MISSING_COLUMNS_ANALYSIS] Анализ недостающих колонок: logicalDbName={}, targetDatabase={}, backupName={}",
+                databaseName, request.targetDatabase(), request.backupName());
+
+        try {
+            BackupFile backup = loadBackup(databaseName, request.backupName(), tier);
+
+            MissingColumnsAnalysisDto analysis = schemaCompatibilityService.generateMissingColumnsAnalysis(
+                    credentials,
+                    backup,
+                    request.targetDatabase()
+            );
+
+            return ResponseEntity.ok(analysis);
+        } catch (IOException e) {
+            log.error("[MISSING_COLUMNS_ANALYSIS] Ошибка ввода-вывода при анализе: logicalDbName={}, targetDatabase={}, backupName={}",
+                    databaseName, request.targetDatabase(), request.backupName(), e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body("Ошибка ввода-вывода при анализе файла " + request.backupName());
+        } catch (Exception e) {
+            log.error("[MISSING_COLUMNS_ANALYSIS] Неожиданная ошибка при анализе: logicalDbName={}, targetDatabase={}, backupName={}",
+                    databaseName, request.targetDatabase(), request.backupName(), e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body("Неожиданная ошибка при анализе недостающих колонок: " + e.getMessage());
         }
     }
 }

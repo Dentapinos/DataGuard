@@ -153,7 +153,8 @@ class FullStackRestoreIT extends BaseResetDatabaseTest {
                 backupName,
                 "testdb",
                 RestoreMode.STRICT,
-                List.of("users", "user_profile", "categories", "products", "orders", "product_orders")
+                List.of("users", "user_profile", "categories", "products", "orders", "product_orders"),
+                null
         );
 
         HttpEntity<RestoreRequest> requestEntity = new HttpEntity<>(request, headers());
@@ -285,6 +286,7 @@ class FullStackRestoreIT extends BaseResetDatabaseTest {
                 "nonexistent_backup.zip",
                 "nonexistent_db",
                 RestoreMode.STRICT,
+                null,
                 null
         );
 
